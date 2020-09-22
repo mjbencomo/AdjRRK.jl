@@ -1,0 +1,13 @@
+name = "AdjRRK"
+uuid = "4b952000-f068-4807-bbe5-3fa06920c611"
+authors = ["Mario Bencomo"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
