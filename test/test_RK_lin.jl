@@ -1,11 +1,11 @@
 # Testing linearized and adjoint RK algorithms on a simple system of ODEs
 using AdjRRK
 using Test
-
-#using Plots
+using LinearAlgebra
 
 rk = rk4
-C = rand(2,2) #[1 0;0 2]
+C = rand(2,2)
+Time = (0,1,0.01)
 
 function f(u)
     return C*u
@@ -17,8 +17,6 @@ function df(u,δu;adj=false)
     end
     return C*δu
 end
-
-Time = (0,1,0.01)
 
 # Solving ODE system
 u0 = randn(2)
