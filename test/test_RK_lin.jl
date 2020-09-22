@@ -29,7 +29,7 @@ u,t = RK_solver(u0,f,Time,rk;return_time=true)
     w0 = u[:,1]
     w = RK_solver((w0,u),(f,df),Time,rk;lin=true)
     norm_diff = norm(u-w)/norm(u)
-    @test norm_diff<DRV_TOL
+    @test norm_diff<AdjRRK.DRV_TOL
 end
 
 # INNER PRODUCT TEST
@@ -40,5 +40,5 @@ end
     z = RK_solver((zT,u),(f,df),Time,rk;adj=true)
     ipt = w[:,1]⋅z[:,1] - w[:,end]⋅z[:,end]
     ipt = abs(ipt)/norm(w)*norm(z[:,end])
-    @test ipt<IPT_TOL
+    @test ipt<AdjRRK.IPT_TOL
 end

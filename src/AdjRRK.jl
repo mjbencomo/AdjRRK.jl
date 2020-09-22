@@ -3,6 +3,9 @@ module AdjRRK
 using LinearAlgebra
 #using Interpolations
 
+IPT_TOL = 1e-13
+DRV_TOL = 1e-1
+
 struct RKs
     stages::Int64
     b::Array
