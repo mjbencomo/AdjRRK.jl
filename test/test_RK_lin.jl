@@ -1,10 +1,12 @@
-# Testing linearized and adjoint RK algorithms on a simple system of ODEs
+# Testing RK algorithm (linearized and adjoint) on a simple system of ODEs.
+
 using AdjRRK
-using Test
 using LinearAlgebra
+using Test
+
 
 rk = rk4
-C = rand(2,2)
+C = randn(2,2)
 Time = (0,1,0.01)
 
 function f(u)
