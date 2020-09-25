@@ -6,6 +6,7 @@ using LinearAlgebra
 ENT_TOL = 1e-13
 IPT_TOL = 1e-13
 DRV_TOL = 5e-2
+CNV_TOL = 0.5
 
 struct RKs
     stages::Int64
