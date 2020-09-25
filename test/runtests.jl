@@ -8,3 +8,6 @@ end
 @safetestset "Testing adjoint IDT on nonlinear pendulum ODE" begin
         include("test_IDT_nlinpen.jl")
 end
+@safetestset "Testing adjoint RRK on nonlinear pendulum ODE" begin
+        include("test_RRK_nlinpen.jl")
+end
