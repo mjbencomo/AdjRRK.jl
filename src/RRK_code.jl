@@ -14,10 +14,10 @@ function RK_int(u,f,dt,rk::RKs)
     return U,F
 end
 
-function RK_int_lin(flds,ops,dt,rks::RKs)
+function RK_int_lin(flds,ops,dt,rk::RKs)
     w,u  = flds
     f,df = ops
-    S = rks.stages
+    S = rk.stages
     U = zeros(length(u),S)
     F = zeros(length(u),S)
     W = zeros(length(u),S)
@@ -28,10 +28,10 @@ function RK_int_lin(flds,ops,dt,rks::RKs)
     W[:,1] = w
     JW[:,1] = df(U[:,1],W[:,1])
     for s=2:S
-        U[:,s] = @. u + dt*rks.a[s-1]*F[:,s-1]
+        U[:,s] = @. u + dt*rk.a[s-1]*F[:,s-1]
         F[:,s] = f(U[:,s])
 
-        W[:,s] = @. w + dt*rks.a[s-1]*JW[:,s-1]
+        W[:,s] = @. w + dt*rk.a[s-1]*JW[:,s-1]
         JW[:,s] = df(U[:,s],W[:,s])
     end
     return U,F,W,JW
@@ -54,14 +54,14 @@ function bisect(γL,γR,r;rtol=1e-15,γtol=1e-15,nmax=10000)
      error("Exiting from bisect, could not find root under $nmax iterations.\\ γ=$γm, r(γ)=$rm")
 end
 
-function RRK_update(flds,ops,dt,rks::RKs)
+function RRK_update(flds,ops,dt,rk::RKs)
     u,γ0   = flds
     f,η,∇η = ops
-    U,F = RK_int(u,f,dt,rks)
+    U,F = RK_int(u,f,dt,rk)
 
     d = zeros(length(u))
     e = 0
-    for s=1:rks.stages
+    for s=1:rk.stages
         d = @. d + rk.b[s].*F[:,s]
         e = e + rk.b[s]*( ∇η(U[:,s])⋅F[:,s] )
     end

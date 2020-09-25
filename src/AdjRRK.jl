@@ -3,8 +3,9 @@ module AdjRRK
 using LinearAlgebra
 #using Interpolations
 
+ENT_TOL = 1e-13
 IPT_TOL = 1e-13
-DRV_TOL = 1e-1
+DRV_TOL = 5e-2
 
 struct RKs
     stages::Int64
@@ -27,7 +28,7 @@ rk4 = RKs(s_rk4,b_rk4,a_rk4)
 include("RK_code.jl")
 include("RRK_code.jl")
 
-export RK_solver, RRK_solver
+export RK_solver, IDT_solver, RRK_solver
 export RKs, rk2, rk4
 
 end
