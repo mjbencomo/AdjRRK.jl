@@ -79,12 +79,13 @@ function RRK_update(flds,ops,dt,rk::RKs)
         γL = 0.9*γ0
         γR = 1.1*γ0
         i = 1
-        imax = 100
+        imax = 10
         while r(γL)>0 && i<=imax
             γR = γL
             γL = γL*0.5
             i  = i+1
             if(i==imax)
+                @show dt
                 @show γ0
                 @show γL
                 @show r(γ0)
@@ -92,7 +93,7 @@ function RRK_update(flds,ops,dt,rk::RKs)
                 @show r(0)
                 @show r(0.5)
                 @show r(1)
-                error("Exiting from RRK_update, could not find γL<0 under 100 iterations")
+                error("Exiting from RRK_update, could not find γL<0 under 10 iterations")
             end
         end
 
@@ -102,7 +103,7 @@ function RRK_update(flds,ops,dt,rk::RKs)
             γR = γR*2
             i  = i+1
             if i==imax
-                error("Exiting from RRK_update, could not find γR>0 under 100 iterations")
+                error("Exiting from RRK_update, could not find γR>0 under 10 iterations")
             end
         end
         γ = bisect(γL,γR,r)
@@ -525,6 +526,10 @@ return_Δη=false)
                 dt_corr = T-t[k]
             end
             flds = (u[:,k],γ[k])
+
+            if(k+1>Nt_tmp)
+                err("Temp data size not large enough. dt must be too big, resulting in |γ-1|>>0")
+            end
 
             u[:,k+1],γ[k+1] = RRK_update(flds,(f,η,∇η),dt_corr,rk)
             t[k+1] = t[k] + γ[k+1]*dt_corr
