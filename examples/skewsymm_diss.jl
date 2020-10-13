@@ -1,13 +1,22 @@
 # Looking at the accuracy of the forward and adjoint algorithms of RK, IDT, and
-# RRK on a skew-symmetric problem that is energy conservative.
+# RRK on a skew-symmetric problem that is energy dissipative.
+
+# Problem is no longer skew-symmetric.
+# We observe 4th order convergence for forward, linear and adjoint problems, as
+# expected, though the convergence rate was a little eratic for IDT.
 
 using AdjRRK
 using LinearAlgebra
 using Plots
 
 rk = rk4
-A = [0 1; -1 0]
 
+t0= 0
+T = 100
+ampfac = 0.5 # = norm(u(T))/norm(u(t0))
+λ = -log(ampfac^2)/(2*T)
+
+A = [-λ 1; -1 -λ]
 
 function f(u)
     return A*u
@@ -29,14 +38,13 @@ function Hη(u,δu;adj=false)
     return δu
 end
 
-t0  = 0
-T   = 100
 dt0 = 1
 
 u0 = [2,1]
 uT = exp(A.*T)*u0
+z0 = exp(-transpose(A).*T)\uT
 
-# Time = (t0,T,dt0/2)
+# Time = (t0,T,dt0)
 # u_RK,Δη_RK,t_RK = RK_solver(u0,(f,η),Time,rk; return_Δη=true,return_time=true)
 # u_IDT,γ_IDT,Δη_IDT = IDT_solver(u0,(f,η,∇η),Time,rk; return_Δη=true)
 # u_RRK,γ_RRK,Δη_RRK,t_RRK,dt_corr = RRK_solver(u0,(f,η,∇η),Time,rk; return_Δη=true,return_time=true)
@@ -123,7 +131,7 @@ for n=1:Nref+1
 
     err_fwd_RK[n] = norm(u[:,end] - uT)
     err_lin_RK[n] = norm(w[:,end] - uT)
-    err_adj_RK[n] = norm(z[:,1] - u0)
+    err_adj_RK[n] = norm(z[:,1] - z0)
 end
 
 rates_fwd_RK = comp_rates(err_fwd_RK)
@@ -151,8 +159,8 @@ for n=1:Nref+1
     err_fwd_IDT[n]   = norm(u[:,end] - uT)
     err_lin_IDTγ0[n] = norm(wγ0[:,end] - uT)
     err_lin_IDT[n]   = norm(w[:,end] - uT)
-    err_adj_IDTγ0[n] = norm(zγ0[:,1] - u0)
-    err_adj_IDT[n]   = norm(z[:,1] - u0)
+    err_adj_IDTγ0[n] = norm(zγ0[:,1] - z0)
+    err_adj_IDT[n]   = norm(z[:,1] - z0)
 end
 
 rates_fwd_IDT   = comp_rates(err_fwd_IDT)
@@ -182,8 +190,8 @@ for n=1:Nref+1
     err_fwd_RRK[n]   = norm(u[:,end] - uT)
     err_lin_RRKγ0[n] = norm(wγ0[:,end] - uT)
     err_lin_RRK[n]   = norm(w[:,end] - uT)
-    err_adj_RRKγ0[n] = norm(zγ0[:,1] - u0)
-    err_adj_RRK[n]   = norm(z[:,1] - u0)
+    err_adj_RRKγ0[n] = norm(zγ0[:,1] - z0)
+    err_adj_RRK[n]   = norm(z[:,1] - z0)
 end
 
 rates_fwd_RRK   = comp_rates(err_fwd_RRK)
@@ -254,63 +262,6 @@ plot(dt,[err_adj_RK,err_adj_IDTγ0,err_adj_IDT,err_adj_RRKγ0,err_adj_RRK],
 display(plot!())
 
 plot([rates_adj_RK,rates_adj_IDTγ0,rates_adj_IDT,rates_adj_RRKγ0,rates_adj_RRK],
-    label=labels,
-    marker=markers,
-    linestyle=linestyles,
-    xaxis=:flip,
-    title="Adjoint convergence slopes/rates",
-    ylabel="Rates/slopes",
-    xlabel="refinement index")
-display(plot!())
-
-## Time reversal results
-
-# The following results demonstrate the time reversibility of RRK and IDT as well
-# as the super convergence behavior of adjoint RK4.
-
-err_RK    = zeros(Nref+1)
-err_IDTγ0 = zeros(Nref+1)
-err_IDT   = zeros(Nref+1)
-err_RRKγ0 = zeros(Nref+1)
-err_RRK   = zeros(Nref+1)
-
-for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u = RK_solver(u0,f,Time,rk)
-    z = RK_solver((u[:,end],u),(f,df),Time,rk;adj=true)
-    err_RK[n] = norm(z[:,1] - u0)
-
-    u,γ = IDT_solver(u0,(f,η,∇η),Time,rk)
-    zγ0 = IDT_solver((u[:,end],u,γ),(f,df),Time,rk;adj=true,γcnst=true)
-    z   = IDT_solver((u[:,end],u,γ),(f,df,∇η,Hη),Time,rk;adj=true)
-    err_IDTγ0[n] = norm(zγ0[:,1] - u0)
-    err_IDT[n]   = norm(z[:,1] - u0)
-
-    u,γ,t,dt_corr = RRK_solver(u0,(f,η,∇η),Time,rk;return_time=true)
-    zγ0 = RRK_solver((u[:,end],u,γ,dt_corr),(f,df),Time,rk;adj=true,γcnst=true)
-    z   = RRK_solver((u[:,end],u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;adj=true)
-    err_RRKγ0[n] = norm(zγ0[:,1] - u0)
-    err_RRK[n]   = norm(z[:,1] - u0)
-end
-
-rates_RK    = comp_rates(err_RK)
-rates_IDTγ0 = comp_rates(err_IDTγ0)
-rates_IDT   = comp_rates(err_IDT)
-rates_RRKγ0 = comp_rates(err_RRKγ0)
-rates_RRK   = comp_rates(err_RRK)
-
-plot(dt,[err_RK,err_IDTγ0,err_IDT,err_RRKγ0,err_RRK],
-    title="Adjoint convergence plot",
-    xaxis=:log,
-    yaxis=:log,
-    label=labels,
-    marker=markers,
-    linestyle=linestyles,
-    xlabel="dt",
-    ylabel="Error at t=$T")
-display(plot!())
-
-plot([rates_RK,rates_IDTγ0,rates_IDT,rates_RRKγ0,rates_RRK],
     label=labels,
     marker=markers,
     linestyle=linestyles,

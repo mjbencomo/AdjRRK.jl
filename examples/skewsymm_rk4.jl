@@ -10,8 +10,7 @@ using LinearAlgebra
 using Plots
 
 rk = rk4
-λ = 0#0.001
-A = [-λ 1; -1 -λ]
+A = [0 1; -1 0]
 
 
 function f(u)
