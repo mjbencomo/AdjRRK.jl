@@ -24,7 +24,7 @@ function df(u,δu;adj=false)
 end
 
 function η(u)
-    return 0.5*norm(u)
+    return 0.5*norm(u)^2
 end
 function ∇η(u)
     return u

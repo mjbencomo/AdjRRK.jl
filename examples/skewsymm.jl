@@ -1,6 +1,16 @@
 # Looking at the accuracy of the forward and adjoint algorithms of RK, IDT, and
 # RRK on a skew-symmetric problem that is energy conservative.
 
+# Results:
+# - Proper convergence of forward, linearized, and adjoint methods, where true
+#   final value is used as the final condition for the adjoint.
+# - When using final value computed by respective method as the final condition
+#   for the adjoint methods we observed better convergence of RK (one order
+#   higher than expected) and time reversibility of the relaxed methods.
+# - When using the final value of the linearized methods as the final condition
+#   for the adjoint methods we observed slighlty degraded time reversibility
+#   results for the relaxed methods.
+
 using AdjRRK
 using LinearAlgebra
 using Plots
@@ -277,16 +287,21 @@ err_RRK   = zeros(Nref+1)
 for n=1:Nref+1
     Time = (t0,T,dt[n])
     u = RK_solver(u0,f,Time,rk)
+    w = RK_solver((u0,u),(f,df),Time,rk;lin=true)
     z = RK_solver((u[:,end],u),(f,df),Time,rk;adj=true)
     err_RK[n] = norm(z[:,1] - u0)
 
     u,γ = IDT_solver(u0,(f,η,∇η),Time,rk)
+    wγ0 = IDT_solver((u0,u,γ),(f,df),Time,rk,;lin=true,γcnst=true)
+    w   = IDT_solver((u0,u,γ),(f,df,∇η,Hη),Time,rk;lin=true)
     zγ0 = IDT_solver((u[:,end],u,γ),(f,df),Time,rk;adj=true,γcnst=true)
     z   = IDT_solver((u[:,end],u,γ),(f,df,∇η,Hη),Time,rk;adj=true)
     err_IDTγ0[n] = norm(zγ0[:,1] - u0)
     err_IDT[n]   = norm(z[:,1] - u0)
 
     u,γ,t,dt_corr = RRK_solver(u0,(f,η,∇η),Time,rk;return_time=true)
+    wγ0 = RRK_solver((u0,u,γ,dt_corr),(f,df),Time,rk;lin=true,γcnst=true)
+    w   = RRK_solver((u0,u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;lin=true)
     zγ0 = RRK_solver((u[:,end],u,γ,dt_corr),(f,df),Time,rk;adj=true,γcnst=true)
     z   = RRK_solver((u[:,end],u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;adj=true)
     err_RRKγ0[n] = norm(zγ0[:,1] - u0)

@@ -1,12 +1,7 @@
 # Looking at the accuracy of the forward and adjoint algorithms of RK, IDT, and
 # RRK on a skew-symmetric problem that is energy conservative.
 
-# Now for a larger random skew-symmetric problem.
-# Results show that adj IDT/RRK converge at same rate as adj RK4.
-
-# Time reversal experiment (when computed u(T) from forward problem is used as
-# the final time condition) demonstrated that adj RK/IDTγ0/RRKγ0 are 5th order,
-# while adj IDT/RRK demonstrated time reversibility upto mach precision.
+# Results are consistent with skewsymm.jl
 
 using AdjRRK
 using LinearAlgebra
@@ -14,7 +9,7 @@ using Plots
 
 rk = rk4
 
-N = 20
+N = 10
 A = randn(N,N)
 A = A - transpose(A)
 
@@ -29,7 +24,7 @@ function df(u,δu;adj=false)
 end
 
 function η(u)
-    return 0.5*norm(u)
+    return 0.5*norm(u)^2
 end
 function ∇η(u)
     return u
@@ -229,16 +224,21 @@ err_RRK   = zeros(Nref+1)
 for n=1:Nref+1
     Time = (t0,T,dt[n])
     u = RK_solver(u0,f,Time,rk)
+    w = RK_solver((u0,u),(f,df),Time,rk;lin=true)
     z = RK_solver((u[:,end],u),(f,df),Time,rk;adj=true)
     err_RK[n] = norm(z[:,1] - u0)
 
     u,γ = IDT_solver(u0,(f,η,∇η),Time,rk)
+    wγ0 = IDT_solver((u0,u,γ),(f,df),Time,rk;lin=true,γcnst=true)
+    w   = IDT_solver((u0,u,γ),(f,df,∇η,Hη),Time,rk;lin=true)
     zγ0 = IDT_solver((u[:,end],u,γ),(f,df),Time,rk;adj=true,γcnst=true)
     z   = IDT_solver((u[:,end],u,γ),(f,df,∇η,Hη),Time,rk;adj=true)
     err_IDTγ0[n] = norm(zγ0[:,1] - u0)
     err_IDT[n]   = norm(z[:,1] - u0)
 
     u,γ,t,dt_corr = RRK_solver(u0,(f,η,∇η),Time,rk;return_time=true)
+    wγ0 = RRK_solver((u0,u,γ,dt_corr),(f,df),Time,rk;lin=true,γcnst=true)
+    w   = RRK_solver((u0,u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;lin=true)
     zγ0 = RRK_solver((u[:,end],u,γ,dt_corr),(f,df),Time,rk;adj=true,γcnst=true)
     z   = RRK_solver((u[:,end],u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;adj=true)
     err_RRKγ0[n] = norm(zγ0[:,1] - u0)
