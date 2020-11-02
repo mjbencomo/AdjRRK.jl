@@ -57,34 +57,52 @@ function RK_update_adj(flds,ops,dt,rk::RKs)
 end
 
 
+## RK SOLVER
+#
+# INPUTS:
+#   arrks::AdjRRK_struct
+#       [RK fwd case]
+#           u0,     initial condition
+#           f,      RHS function
+#           η,      entropy function (if return_Δη=true)
+#       [RK lin case; if lin=true]
+#           u,      solution of forward RK
+#           u0_lin, initial condition for linearized solution
+#           f,      RHS function
+#           df,     Jacobian of RHS function
+#       [RK adj case; if adj=true]
+#           u,      solution of forward RK
+#           uT_adj, final condition for adjoint solution
+#           f,      RHS function
+#           df,     Jacobian of RHS function
+#   ts::Time_struct
+#       [RK fwd case]
+#           t0,     intial time
+#           T,      final time
+#           dt,     time step size
+#       [RK lin case; if lin=true]
+#           dt,     time step size
+#           Nt,     number of time steps
+#       [RK adj case; if adj=true]
+#           dt,     time step size
+#           Nt,     number of time steps
+#   rk::RKs
+#
+# OUTPUTS:
+#   arrks::AdjRRK_struct
+#       [RK fwd case]
+#           u,      solution
+#           Δη,     change in entropy (if return_Δη=true)
+#       [RK lin case; if lin=true]
+#           u_lin,  linearized solution
+#       [RK adj case; if adj=true]
+#           u_adj,  adjoint solution
+#   ts::Time_struct
+#       [RK fwd case]
+#           dt,     may get modified
+#           Nt,     number of time steps
+#           t,      time grid points
 
-# --------------------------------------#
-# RK ALGORITHM
-#
-# Remark: in_flds and ops depend on the optional flags.
-#
-# INPUT ARGS:
-#   in_flds = u0,
-#           = (w0,u), [lin=true]
-#           = (zT,u), [adj=true]
-#       ops = f,
-#           = (f,η),  [return_Δη=true]
-#           = (f,df), [lin=true or adj=true]
-#      Time = (t0,T,dt), time axis info.
-#       rk = RKs struct storing coefficients.
-# OPTIONAL FLAGS:
-#         lin = running linearized algorithm
-#         adj = running adjoint algorithm
-# return_time = return time axis
-#   return_Δη = return change in entropy
-#
-# OUTPUT:
-#   u,
-#   (u,Δu), return_Δη=true
-#   (u,t),  return_time=true
-#   w,      lin=true
-#   z,      adj=true
-# ---------------------------------------#
 function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;
 return_time=false,
 return_Δη=false,
@@ -100,11 +118,7 @@ adj=false )
     end
 end
 
-function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,
-return_time=false,
-return_Δη=false)
-
-    #setting up time axis
+function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool,return_Δη::Bool)
     @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
@@ -131,7 +145,7 @@ return_Δη=false)
         Δη = zeros(Nt)
         η0 = η(u[:,1])
         for k=1:Nt-1
-            Δηu[k+1] = η(u[:,k+1])-ηu0
+            Δη[k+1] = η(u[:,k+1])-η0
         end
         @pack! arrks = Δη
     end

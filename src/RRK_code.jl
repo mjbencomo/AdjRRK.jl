@@ -289,115 +289,150 @@ function RRK_update_adj_last(flds,ops,dt_corr,rk::RKs)
     return (@. z + dz + ξ*Γ, ζ)
 end
 
-# --------------------------------------#
-# IDT ALGORITHM
+## IDT SOLVER
 #
-# Remark: in_flds and ops depend on the optional flags.
+# INPUTS:
+#   arrks::AdjRRK_struct
+#       [IDT fwd case]
+#           u0,     initial condition
+#           f,      RHS function
+#           η,      entropy function (if return_Δη=true)
+#       [IDT lin case; if lin=true]
+#           u,      solution of forward RK
+#           u0_lin, initial condition for linearized solution
+#           f,      RHS function
+#           df,     Jacobian of RHS function
+#       [IDT adj case; if adj=true]
+#           u,      solution of forward RK
+#           uT_adj, final condition for adjoint solution
+#           f,      RHS function
+#           df,     Jacobian of RHS function
+#   ts::Time_struct
+#       [IDT fwd case]
+#           t0,     intial time
+#           T,      final time
+#           dt,     time step size
+#       [IDT lin case; if lin=true]
+#           dt,     time step size
+#           Nt,     number of time steps
+#       [IDT adj case; if adj=true]
+#           dt,     time step size
+#           Nt,     number of time steps
+#   rk::RKs
 #
-# INPUT ARGS:
-#   in_flds = u0,
-#           = (w0,u,γ),     [lin=true]
-#           = (zT,u,γ),     [adj=true]
-#       ops = (f,η,∇η)
-#           = (f,df),       [lin=true or adj=true, & γcnst=true]
-#           = (f,df,∇η,Hη), [lin=true or adj=true]
-#      Time = (t0,T,dt), time axis info.
-#       rk = RKs struct storing coefficients.
-# OPTIONAL FLAGS:
-#         lin = running linearized algorithm
-#         adj = running adjoint algorithm
-# return_time = return time axis
-#   return_Δη = return change in entropy
-#       γcnst = view γ constant during linearization/adjoint
-#
-# OUTPUT:
-#   u,γ
-#   (u,γ,Δη), return_Δη=true
-#   (u,γ,t),  return_time=true
-#   (u,γ,Δη,t)
-#   w,      lin=true
-#   z,      adj=true
-# ---------------------------------------#
-function IDT_solver(in_flds,ops,Time,rk;
+# OUTPUTS:
+#   arrks::AdjRRK_struct
+#       [IDT fwd case]
+#           u,      solution
+#           Δη,     change in entropy (if return_Δη=true)
+#       [IDT lin case; if lin=true]
+#           u_lin,  linearized solution
+#       [IDT adj case; if adj=true]
+#           u_adj,  adjoint solution
+#   ts::Time_struct
+#       [IDT fwd case]
+#           dt,     may get modified
+#           Nt,     number of time steps
+#           t,      time grid points
+
+function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;
+return_time=false,
+return_Δη=false,
 lin=false,
 adj=false,
-γcnst=false,
-return_time=false,
-return_Δη=false)
-
-    t0,T,dt = Time
-    Nt = ceil(Int,(T-t0)/dt)+1
-    dt = (T-t0)/(Nt-1)
+γcnst=false)
 
     if lin && ~(adj)
-    #Linearized IDT algorithm
-        w0,u,γ = in_flds
-        w = zeros(size(u))
-        w[:,1] = w0
-
-        if γcnst
-            for k=1:Nt-1
-                flds = (w[:,k],u[:,k],γ[k+1])
-                w[:,k+1] = RRKγ0_update_lin(flds,ops,dt,rk)
-            end
-            out_flds = w
-        else
-            ϱ = 0
-            for k=1:Nt-1
-                flds = (w[:,k],u[:,k:k+1],γ[k+1],ϱ)
-                w[:,k+1],ϱ = RRK_update_lin(flds,ops,dt,rk)
-            end
-            out_flds = w
-        end
-
+        IDT_lin!(arrks,ts,rk,γcnst)
     elseif adj
-    #Adjoint IDT algorithm
-        zT,u,γ = in_flds
-        z = zeros(size(u))
-        z[:,Nt] = zT
-
-        if γcnst
-            for k=Nt-1:-1:1
-                flds = (z[:,k+1],u[:,k],γ[k+1])
-                z[:,k] = RRKγ0_update_adj(flds,ops,dt,rk)
-            end
-            out_flds = z
-        else
-            for k=Nt-1:-1:1
-                flds = (z[:,k+1],u[:,k:k+1],γ[k+1],0)
-                z[:,k] = RRK_update_adj(flds,ops,dt,rk)
-            end
-            out_flds = z
-        end
-
+        IDT_adj!(arrks,ts,rk,γcnst)
     else
-    #IDT algorithm
-        f,η,∇η = ops
-        u0     = in_flds
-        u      = zeros(length(u0),Nt)
-        u[:,1] = u0
-        γ      = ones(Nt)
-        for k=1:Nt-1
-            flds = (u[:,k],γ[k])
-            u[:,k+1],γ[k+1] = RRK_update(flds,ops,dt,rk)
-        end
-        out_flds = (u,γ)
+        IDT_fwd!(arrks,ts,rk,return_time,return_Δη)
+    end
 
-        if return_Δη
-            Δηu = zeros(Nt)
-            ηu0 = η(u[:,1])
-            for k=1:Nt-1
-                Δηu[k+1] = η(u[:,k+1])-ηu0
-            end
-            out_flds = (out_flds...,Δηu)
+end
+
+function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool,return_Δη::Bool)
+    @unpack t0,T,dt = ts
+    Nt = ceil(Int,(T-t0)/dt)+1
+    dt = (T-t0)/(Nt-1)
+    @pack! ts = dt,Nt
+
+    @unpack f,η,∇η = arrks
+    @unpack u0 = arrks
+
+    u = zeros(length(u0),Nt)
+    u[:,1] = u0
+    γ = ones(Nt)
+
+    for k=1:Nt-1
+        flds = (u[:,k],γ[k])
+        u[:,k+1],γ[k+1] = RRK_update(flds,(f,η,∇η),dt,rk)
+    end
+    @pack! arrks = u,γ
+
+    if return_time
+        t = range(t0,stop=T,length=Nt) |> collect
+        @pack! ts = t
+    end
+
+    if return_Δη
+        Δη = zeros(Nt)
+        η0 = η(u[:,1])
+        for k=1:Nt-1
+            Δη[k+1] = η(u[:,k+1])-η0
         end
-        if return_time
-            t = range(t0,stop=T,length=Nt) |> collect
-            out_flds = (out_flds...,t)
+        @pack! arrks = Δη
+    end
+end
+
+function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
+    @unpack dt,Nt = ts
+    @unpack f,df = arrks
+    @unpack u0_lin,u,γ = arrks
+
+    u_lin = zeros(size(u))
+    u_lin[:,1] = u0_lin
+
+    if γcnst
+        for k=1:Nt-1
+            flds = (u_lin[:,k],u[:,k],γ[k+1])
+            u_lin[:,k+1] = RRKγ0_update_lin(flds,(f,df),dt,rk)
+        end
+    else
+        @unpack ∇η,Hη = arrks
+        ϱ = 0
+        for k=1:Nt-1
+            flds = (u_lin[:,k],u[:,k:k+1],γ[k+1],ϱ)
+            u_lin[:,k+1],ϱ = RRK_update_lin(flds,(f,df,∇η,Hη),dt,rk)
         end
     end
-    return out_flds
+    @pack! arrks = u_lin
 end
+
+function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
+    @unpack dt,Nt = ts
+    @unpack f,df = arrks
+    @unpack uT_adj,u,γ = arrks
+
+    u_adj = zeros(size(u))
+    u_adj[:,Nt] = uT_adj
+
+    if γcnst
+        for k=Nt-1:-1:1
+            flds = (u_adj[:,k+1],u[:,k],γ[k+1])
+            u_adj[:,k] = RRKγ0_update_adj(flds,(f,df),dt,rk)
+        end
+    else
+        @unpack ∇η,Hη = arrks
+        for k=Nt-1:-1:1
+            flds = (u_adj[:,k+1],u[:,k:k+1],γ[k+1],0)
+            u_adj[:,k] = RRK_update_adj(flds,(f,df,∇η,Hη),dt,rk)
+        end
+    end
+    @pack! arrks = u_adj
+end
+
 
 # --------------------------------------#
 # RRK ALGORITHM

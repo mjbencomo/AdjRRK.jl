@@ -62,8 +62,9 @@ include("RK_code.jl")
 include("RRK_code.jl")
 include("test_code.jl")
 
-export RK_solver!, IDT_solver, RRK_solver
-export RKs, rk2, rk4, AdjRRK_struct, Time_struct
+export RK_solver!, IDT_solver!, RRK_solver
+export RKs, rk2, rk4
+export AdjRRK_struct, Time_struct, cp_ops
 # export derv_test, IP_test
 
 end

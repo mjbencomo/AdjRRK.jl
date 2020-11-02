@@ -30,65 +30,21 @@ function df(u,δu;adj=false)
     return J*δu
 end
 @pack! arrks = f,df
+arrks.u0 = [1.5,1]
 
-# Running RK
-u0 = [1.5,1]
-@pack! arrks = u0
-RK_solver!(arrks,ts,rk)
-@unpack u = arrks
-
-# DERIVATIVE TEST
-# Given that the problem is nonlinear, we compare linearization output with a
-# finite difference approximation and compute the convergence rate, which should
-# be one.
 @testset "derivative test" begin
-    d      = randn(2)
-    Nref   = 10
-    FD_err = zeros(Nref+1)
-    h      = zeros(Nref+1)
-    h[1]   = 2^(-8)
-    arrks.u0_lin = d
-    RK_solver!(arrks,ts,rk;lin=true)
-    @unpack u_lin = arrks
+    arrks.u0_lin = randn(2)
+    Nref = 10
+    h0 = 2^(-8)
 
     arrks_h = AdjRRK_struct()
-    arrks_h.f  = arrks.f
-    arrks_h.df = arrks.df
-    for n=1:Nref+1
-        arrks_h.u0 = u0 + h[n].*d
-        RK_solver!(arrks_h,ts,rk)
-        uh = arrks_h.u
+    @pack! arrks_h = f,df
 
-        FD_err[n] = norm((uh-u)./h[n] - u_lin)
-        if n<Nref+1
-            h[n+1] = h[n]/2
-        end
-
-
-        # uh0 = u[:,1] + h[n].*d
-        # uh  = RK_solver!(uh0,f,Time,rk)
-        # FD_err[n] = norm((uh-u)./h[n] - w)
-        # if n<Nref+1
-        #     h[n+1] = h[n]/2
-        # end
-    end
-    rate = log2(FD_err[Nref])-log2(FD_err[Nref+1])
-    @test abs(rate-1)<AdjRRK.DRV_TOL
+    errs,rate,h = AdjRRK.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
+    @test abs(rate[end]-1)<AdjRRK.DRV_TOL
 end
 
-# INNER PRODUCT TEST
 @testset "inner product test" begin
-    # Running linear RK
-    arrks.u0_lin = randn(2)
-    RK_solver!(arrks,ts,rk;lin=true)
-
-    # Running adjoint RK
-    arrks.uT_adj = randn(2)
-    RK_solver!(arrks,ts,rk;adj=true)
-
-    @unpack u_lin,u_adj = arrks
-    ipt = u_lin[:,1]⋅u_adj[:,1] - u_lin[:,end]⋅u_adj[:,end]
-    ipt = abs(ipt)
-    ipt /= norm(u_lin)*norm(u_adj[:,end])
+    ipt = AdjRRK.ip_test!(arrks,ts,rk)
     @test ipt<AdjRRK.IPT_TOL
 end
