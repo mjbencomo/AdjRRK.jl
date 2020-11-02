@@ -25,6 +25,11 @@ mutable struct Time_struct
 end
 
 mutable struct AdjRRK_struct
+    #flags
+    return_time::Bool
+    return_Δη::Bool
+    γcnst::Bool
+
     #functions
     f; df
     η; ∇η; Hη
@@ -43,7 +48,8 @@ mutable struct AdjRRK_struct
     Δη::Array{Float64,1}
     γ::Array{Float64,1}
 
-    AdjRRK_struct() = new()
+    AdjRRK_struct() = new(false,false,false)
+    AdjRRK_struct(arrks::AdjRRK_struct) = new(arrks.return_time,arrks.return_Δη,arrks.γcnst)
 end
 
 # coefficients for Heun's method

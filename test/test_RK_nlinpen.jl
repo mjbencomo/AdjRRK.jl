@@ -37,7 +37,7 @@ arrks.u0 = [1.5,1]
     Nref = 10
     h0 = 2^(-8)
 
-    arrks_h = AdjRRK_struct()
+    arrks_h = AdjRRK_struct(arrks)
     @pack! arrks_h = f,df
 
     errs,rate,h = AdjRRK.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)

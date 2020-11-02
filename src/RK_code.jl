@@ -65,6 +65,8 @@ end
 #           u0,     initial condition
 #           f,      RHS function
 #           η,      entropy function (if return_Δη=true)
+#           return_time,
+#           return_Δη,
 #       [RK lin case; if lin=true]
 #           u,      solution of forward RK
 #           u0_lin, initial condition for linearized solution
@@ -101,24 +103,19 @@ end
 #       [RK fwd case]
 #           dt,     may get modified
 #           Nt,     number of time steps
-#           t,      time grid points
+#           t,      time grid points (if return_time=true)
 
-function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;
-return_time=false,
-return_Δη=false,
-lin=false,
-adj=false )
-
+function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=false)
     if lin && ~(adj)
         RK_lin!(arrks,ts,rk)
     elseif adj
         RK_adj!(arrks,ts,rk)
     else
-        RK_fwd!(arrks,ts,rk,return_time,return_Δη)
+        RK_fwd!(arrks,ts,rk)
     end
 end
 
-function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool,return_Δη::Bool)
+function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
@@ -135,12 +132,11 @@ function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool,
     end
     @pack! arrks = u
 
-    if return_time
+    if arrks.return_time
         t = range(t0,stop=T,length=Nt) |> collect
         @pack! ts = t
     end
-
-    if return_Δη
+    if arrks.return_Δη
         @unpack η = arrks
         Δη = zeros(Nt)
         η0 = η(u[:,1])
