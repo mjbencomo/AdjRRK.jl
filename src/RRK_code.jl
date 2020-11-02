@@ -335,24 +335,18 @@ end
 #           Nt,     number of time steps
 #           t,      time grid points
 
-function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;
-return_time=false,
-return_Δη=false,
-lin=false,
-adj=false,
-γcnst=false)
-
+function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=false)
     if lin && ~(adj)
-        IDT_lin!(arrks,ts,rk,γcnst)
+        IDT_lin!(arrks,ts,rk)
     elseif adj
-        IDT_adj!(arrks,ts,rk,γcnst)
+        IDT_adj!(arrks,ts,rk)
     else
-        IDT_fwd!(arrks,ts,rk,return_time,return_Δη)
+        IDT_fwd!(arrks,ts,rk)
     end
 
 end
 
-function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool,return_Δη::Bool)
+function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
@@ -371,12 +365,12 @@ function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool
     end
     @pack! arrks = u,γ
 
-    if return_time
+    if arrks.return_time
         t = range(t0,stop=T,length=Nt) |> collect
         @pack! ts = t
     end
 
-    if return_Δη
+    if arrks.return_Δη
         Δη = zeros(Nt)
         η0 = η(u[:,1])
         for k=1:Nt-1
@@ -386,7 +380,7 @@ function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,return_time::Bool
     end
 end
 
-function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
+function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @unpack dt,Nt = ts
     @unpack f,df = arrks
     @unpack u0_lin,u,γ = arrks
@@ -394,7 +388,7 @@ function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
     u_lin = zeros(size(u))
     u_lin[:,1] = u0_lin
 
-    if γcnst
+    if arrks.γcnst
         for k=1:Nt-1
             flds = (u_lin[:,k],u[:,k],γ[k+1])
             u_lin[:,k+1] = RRKγ0_update_lin(flds,(f,df),dt,rk)
@@ -410,7 +404,7 @@ function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
     @pack! arrks = u_lin
 end
 
-function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
+function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @unpack dt,Nt = ts
     @unpack f,df = arrks
     @unpack uT_adj,u,γ = arrks
@@ -418,7 +412,7 @@ function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,γcnst::Bool)
     u_adj = zeros(size(u))
     u_adj[:,Nt] = uT_adj
 
-    if γcnst
+    if arrks.γcnst
         for k=Nt-1:-1:1
             flds = (u_adj[:,k+1],u[:,k],γ[k+1])
             u_adj[:,k] = RRKγ0_update_adj(flds,(f,df),dt,rk)

@@ -5,7 +5,7 @@ using UnPack
 
 ENT_TOL = 1e-13
 IPT_TOL = 1e-13
-DRV_TOL = 5e-2
+DRV_TOL = 0.1
 CNV_TOL = 0.5
 
 struct RKs

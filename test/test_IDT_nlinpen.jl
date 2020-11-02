@@ -4,14 +4,23 @@
 using AdjRRK
 using LinearAlgebra
 using Test
+using UnPack
 
+# setting RKs and AdjRRK_struct structs
 rk = rk4
-Time = (0,500,0.9)
+arrks = AdjRRK_struct()
 
+# setting time stuff
+ts = Time_struct()
+t0 = 0
+T  = 500
+dt = 0.9
+@pack! ts = t0,T,dt
+
+# setting RHS function and its Jacobian
 function f(u)
     return [-sin(u[2]),u[1]]
 end
-
 function df(u,δu;adj=false)
     J = [0 -cos(u[2]); 1 0]
     if adj
@@ -19,17 +28,17 @@ function df(u,δu;adj=false)
     end
     return J*δu
 end
+@pack! arrks = f,df
 
+# setting entropy functions
 function η(u)
     return 0.5*u[1]^2 - cos(u[2])
 end
-
 function ∇η(u)
     d1 = u[1]
     d2 = sin(u[2])
     return [d1,d2]
 end
-
 function Hη(u,δu;adj=false)
     H = [1 0; 0 cos(u[2])]
     if adj
@@ -37,68 +46,48 @@ function Hη(u,δu;adj=false)
     end
     return H*δu
 end
+@pack! arrks = η,∇η,Hη
 
-# Running RRK
-u0 = [1.5,1]
-u,γ,Δηu,t = IDT_solver(u0,(f,η,∇η),Time,rk;
-            return_time=true,
-            return_Δη=true)
+#initial condition
+arrks.u0 = [1.5,1]
 
-# ENTROPY STABILITY TEST
 @testset "entropy stability test" begin
-    @test abs(Δηu[end])<AdjRRK.ENT_TOL
+    arrks.return_Δη=true
+    IDT_solver!(arrks,ts,rk)
+    @unpack Δη = arrks
+    @test abs(Δη[end])<AdjRRK.ENT_TOL
 end
 
-# DERIVATIVE TEST
 @testset "derivative test" begin
-    d = randn(2)
-    Nref = 15
+    arrks.u0_lin = randn(2)
+    Nref = 8
+    h0 = 2^(-6)
 
-    # This test is commented out since the derivative test is expected to fail.
-    # # IDTγ0
-    # h = 2^(-6)
-    # FD_err = zeros(Nref+1)
-    # w = IDT_solver((d,u,γ),(f,df),Time,rk;lin=true,γcnst=true)
-    # for n=1:Nref+1
-    #     uh0 = u[:,1] + h.*d
-    #     uh,γh = IDT_solver(uh0,(f,η,∇η),Time,rk;γcnst=true)
-    #     FD_err[n] = norm((uh[:,end]-u[:,end])./h - w[:,end])
-    #     h = h/2
-    # end
-    # rate_γ0 = log2(FD_err[Nref]) - log2(FD_err[Nref+1])
-    # @test abs(rate_γ0-1)<AdjRRK.DRV_TOL
+    # # γcnst=true case
+    # arrks.γcnst = true
+    # arrks_h = AdjRRK_struct(arrks)
+    # @pack! arrks_h = f,df,η,∇η,Hη
+    # errs_γ0,rate_γ0,h = Addj.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
+    # @test abs(rate_γ0[end]-1)<AdjRRK.DRV_TOL
 
-    # IDT
-    h = 2^(-6)
-    FD_err = zeros(Nref+1)
-    w = IDT_solver((d,u,γ),(f,df,∇η,Hη),Time,rk;lin=true)
-    for n=1:Nref+1
-        uh0 = u[:,1] + h.*d
-        uh,γh = IDT_solver(uh0,(f,η,∇η),Time,rk)
-        FD_err[n] = norm((uh[:,end]-u[:,end])./h - w[:,end])
-        h = h/2
-    end
-    rate = log2(FD_err[Nref]) - log2(FD_err[Nref+1])
-    @test abs(rate-1)<AdjRRK.DRV_TOL
+    # γcnst=false case
+    arrks.γcnst = false
+    arrks_h = AdjRRK_struct(arrks)
+    @pack! arrks_h = f,df,η,∇η,Hη
+    errs,rate,h = AdjRRK.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
+    @test abs(rate[end]-1)<AdjRRK.DRV_TOL
 end
 
 # INNER PRODUCT TEST
 @testset "inner product test" begin
 
-    w0 = randn(2)
-    zT = randn(2)
+    # γcnst=true case
+    arrks.γcnst = true
+    ipt_γ0 = AdjRRK.ip_test!(arrks,ts,rk)
+    @test ipt_γ0<AdjRRK.IPT_TOL
 
-    # IDTγ0
-    w = IDT_solver((w0,u,γ),(f,df),Time,rk;lin=true,γcnst=true)
-    z = IDT_solver((zT,u,γ),(f,df),Time,rk;adj=true,γcnst=true)
-    ipt_γ0 = w[:,1]⋅z[:,1] - w[:,end]⋅z[:,end]
-    ipt_γ0 = abs(ipt_γ0)/norm(w)*norm(z[:,end])
-    @test ipt_γ0 < AdjRRK.IPT_TOL
-
-    # IDT
-    w = IDT_solver((w0,u,γ),(f,df,∇η,Hη),Time,rk;lin=true)
-    z = IDT_solver((zT,u,γ),(f,df,∇η,Hη),Time,rk;adj=true)
-    ipt = w[:,1]⋅z[:,1] - w[:,end]⋅z[:,end]
-    ipt = abs(ipt)/norm(w)*norm(z[:,end])
-    @test ipt < AdjRRK.IPT_TOL
+    # γcnst=false case
+    arrks.γcnst = false
+    ipt = AdjRRK.ip_test!(arrks,ts,rk)
+    @test ipt<AdjRRK.IPT_TOL
 end

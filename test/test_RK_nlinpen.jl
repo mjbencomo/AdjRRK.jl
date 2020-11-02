@@ -30,6 +30,8 @@ function df(u,δu;adj=false)
     return J*δu
 end
 @pack! arrks = f,df
+
+# initial condition
 arrks.u0 = [1.5,1]
 
 @testset "derivative test" begin
@@ -39,7 +41,6 @@ arrks.u0 = [1.5,1]
 
     arrks_h = AdjRRK_struct(arrks)
     @pack! arrks_h = f,df
-
     errs,rate,h = AdjRRK.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
     @test abs(rate[end]-1)<AdjRRK.DRV_TOL
 end
