@@ -47,14 +47,6 @@ end
 
 # INNER PRODUCT TEST
 @testset "inner product test" begin
-    arrks.u0_lin = randn(2)
-    RK_solver!(arrks,ts,rk;lin=true)
-    arrks.uT_adj = randn(2)
-    RK_solver!(arrks,ts,rk;adj=true)
-
-    @unpack u_lin,u_adj= arrks
-    ipt = u_lin[:,1]⋅u_adj[:,1] - u_lin[:,end]⋅u_adj[:,end]
-    ipt = abs(ipt)
-    ipt /= norm(u_lin)*norm(u_adj[:,end])
+    ipt = AdjRRK.ip_test!(arrks,ts,rk)
     @test ipt<AdjRRK.IPT_TOL
 end
