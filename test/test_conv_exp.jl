@@ -4,15 +4,18 @@
 using AdjRRK
 using LinearAlgebra
 using Test
+using UnPack
 
 function avg(x)
     return sum(x)/length(x)
 end
 
+# initializing AdjRRK_struct
+arrks = AdjRRK_struct()
+
 function f(u)
     return [-exp(u[2]),exp(u[1])]
 end
-
 function df(u,δu;adj=false)
     J = [0 -exp(u[2]); exp(u[1]) 0]
     if adj
@@ -20,15 +23,14 @@ function df(u,δu;adj=false)
     end
     return J*δu
 end
+@pack! arrks = f,df
 
 function η(u)
     return exp(u[1])+exp(u[2])
 end
-
 function ∇η(u)
     return [exp(u[1]),exp(u[2])]
 end
-
 function Hη(u,δu;adj=false)
     H = [exp(u[1]) 0; 0 exp(u[2])]
     if adj
@@ -36,6 +38,7 @@ function Hη(u,δu;adj=false)
     end
     return H*δu
 end
+@pack! arrks = η,∇η,Hη
 
 function true_sol(t)
     u = zeros(2)
@@ -48,10 +51,15 @@ function true_sol(t)
     return u
 end
 
+
+# setting time stuff
+ts = Time_struct()
 t0 = 0
 T  = 5
+@pack! ts = t0,T
 dt0 = 0.5
-u0 = [1,0.5]
+
+arrks.u0 = [1,0.5]
 u_true = true_sol(T)
 
 Nref = 4
@@ -63,15 +71,15 @@ end
 
 
 ## RK convergence run
-solver = RK_solver
-ops = f
+solver! = RK_solver!
 
 #RK4
 rk = rk4
 err = zeros(Nref+1)
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u = solver(u0,ops,Time,rk)
+    ts.dt = dt[n]
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
     err[n] = norm(u[:,end] - u_true)
 end
 rates = zeros(Nref)
@@ -85,8 +93,9 @@ rates_RK4 = rates
 rk = rk2
 err = zeros(Nref+1)
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u = solver(u0,ops,Time,rk)
+    ts.dt = dt[n]
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
     err[n] = norm(u[:,end] - u_true)
 end
 rates = zeros(Nref)
@@ -124,15 +133,15 @@ end
 
 
 ## IDT convergence run
-solver = IDT_solver
-ops = (f,η,∇η)
+solver! = IDT_solver!
 
 #RK4
 rk = rk4
 err = zeros(Nref+1)
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u,γ = solver(u0,ops,Time,rk)
+    ts.dt = dt[n]
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
     err[n] = norm(u[:,end] - u_true[:])
 end
 rates = zeros(Nref)
@@ -146,8 +155,9 @@ rates_IDT4 = rates
 rk = rk2
 err = zeros(Nref+1)
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u,γ = solver(u0,ops,Time,rk)
+    ts.dt = dt[n]
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
     err[n] = norm(u[:,end] - u_true[:])
 end
 rates = zeros(Nref)
@@ -184,15 +194,15 @@ end
 # display(plot!())
 
 ## RRK convergence run
-solver = RRK_solver
-ops = (f,η,∇η)
+solver! = RRK_solver!
 
 #RK4
 rk = rk4
 err = zeros(Nref+1)
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u,γ = solver(u0,ops,Time,rk)
+    ts.dt = dt[n]
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
     err[n] = norm(u[:,end] - u_true[:])
 end
 rates = zeros(Nref)
@@ -206,8 +216,9 @@ rates_RRK4 = rates
 rk = rk2
 err = zeros(Nref+1)
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u,γ = solver(u0,ops,Time,rk)
+    ts.dt = dt[n]
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
     err[n] = norm(u[:,end] - u_true[:])
 end
 rates = zeros(Nref)

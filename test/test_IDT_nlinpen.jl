@@ -61,33 +61,31 @@ end
 @testset "derivative test" begin
     arrks.u0_lin = randn(2)
     Nref = 8
-    h0 = 2^(-6)
+    h0 = 2^(-8)
 
-    # # γcnst=true case
-    # arrks.γcnst = true
+    # # assuming γ is cnst in linearization
+    # arrks.γ_cnst = true
     # arrks_h = AdjRRK_struct(arrks)
     # @pack! arrks_h = f,df,η,∇η,Hη
-    # errs_γ0,rate_γ0,h = Addj.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
+    # errs_γ0,rate_γ0,h = Addj.derv_test!(IDT_solver!,arrks,arrks_h,ts,rk,h0,Nref)
     # @test abs(rate_γ0[end]-1)<AdjRRK.DRV_TOL
 
-    # γcnst=false case
-    arrks.γcnst = false
+    # with proper linearization
+    arrks.γ_cnst = false
     arrks_h = AdjRRK_struct(arrks)
     @pack! arrks_h = f,df,η,∇η,Hη
-    errs,rate,h = AdjRRK.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
+    errs,rate,h = AdjRRK.derv_test!(IDT_solver!,arrks,arrks_h,ts,rk,h0,Nref)
     @test abs(rate[end]-1)<AdjRRK.DRV_TOL
 end
 
-# INNER PRODUCT TEST
 @testset "inner product test" begin
-
-    # γcnst=true case
-    arrks.γcnst = true
-    ipt_γ0 = AdjRRK.ip_test!(arrks,ts,rk)
+    # assuming γ is cnst in linearization
+    arrks.γ_cnst = true
+    ipt_γ0 = AdjRRK.ip_test!(IDT_solver!,arrks,ts,rk)
     @test ipt_γ0<AdjRRK.IPT_TOL
 
-    # γcnst=false case
-    arrks.γcnst = false
-    ipt = AdjRRK.ip_test!(arrks,ts,rk)
+    # with proper linearization
+    arrks.γ_cnst = false
+    ipt = AdjRRK.ip_test!(IDT_solver!,arrks,ts,rk)
     @test ipt<AdjRRK.IPT_TOL
 end

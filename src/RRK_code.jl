@@ -296,17 +296,28 @@ end
 #       [IDT fwd case]
 #           u0,     initial condition
 #           f,      RHS function
-#           η,      entropy function (if return_Δη=true)
+#           η,      entropy function
+#           ∇η,     gradient of entropy
+#           return_time,
+#           return_Δη,
 #       [IDT lin case; if lin=true]
 #           u,      solution of forward RK
+#           γ,      relaxation parameter
 #           u0_lin, initial condition for linearized solution
 #           f,      RHS function
 #           df,     Jacobian of RHS function
+#           ∇η,     gradient of entropy (if γ_cnst=false)
+#           Hη,     Hessian of entropy (if γ_cnst=false)
+#           γ_cnst, flag, true if γ should be const. when linearizing
 #       [IDT adj case; if adj=true]
 #           u,      solution of forward RK
+#           γ,      relaxation parameter
 #           uT_adj, final condition for adjoint solution
 #           f,      RHS function
 #           df,     Jacobian of RHS function
+#           ∇η,     gradient of entropy (if γ_cnst=false)
+#           Hη,     Hessian of entropy (if γ_cnst=false)
+#           γ_cnst, flag, true if γ should be const. when linearizing
 #   ts::Time_struct
 #       [IDT fwd case]
 #           t0,     intial time
@@ -324,6 +335,7 @@ end
 #   arrks::AdjRRK_struct
 #       [IDT fwd case]
 #           u,      solution
+#           γ,      relaxation parameter
 #           Δη,     change in entropy (if return_Δη=true)
 #       [IDT lin case; if lin=true]
 #           u_lin,  linearized solution
@@ -343,7 +355,6 @@ function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=
     else
         IDT_fwd!(arrks,ts,rk)
     end
-
 end
 
 function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
@@ -369,7 +380,6 @@ function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
         t = range(t0,stop=T,length=Nt) |> collect
         @pack! ts = t
     end
-
     if arrks.return_Δη
         Δη = zeros(Nt)
         η0 = η(u[:,1])
@@ -388,7 +398,7 @@ function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     u_lin = zeros(size(u))
     u_lin[:,1] = u0_lin
 
-    if arrks.γcnst
+    if arrks.γ_cnst
         for k=1:Nt-1
             flds = (u_lin[:,k],u[:,k],γ[k+1])
             u_lin[:,k+1] = RRKγ0_update_lin(flds,(f,df),dt,rk)
@@ -412,7 +422,7 @@ function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     u_adj = zeros(size(u))
     u_adj[:,Nt] = uT_adj
 
-    if arrks.γcnst
+    if arrks.γ_cnst
         for k=Nt-1:-1:1
             flds = (u_adj[:,k+1],u[:,k],γ[k+1])
             u_adj[:,k] = RRKγ0_update_adj(flds,(f,df),dt,rk)
@@ -457,136 +467,272 @@ end
 #   w,      lin=true
 #   z,      adj=true
 # ---------------------------------------#
-function RRK_solver(in_flds,ops,Time,rk;
-lin=false,
-adj=false,
-γcnst=false,
-corr=true,
-return_time=false,
-return_Δη=false)
-
-    t0,T,dt = Time
-    Nt_tmp = ceil(Int,(T-t0)/dt)+1
-    dt = (T-t0)/(Nt_tmp-1)
-
+function RRK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=false)
     if lin && ~(adj)
-    #linearized RRK algorithm
-        w0,u,γ,dt_corr = in_flds
-        Nt = length(γ)
-        w = zeros(size(u))
-        w[:,1] = w0
-
-        if γcnst
-            for k=1:Nt-2
-                flds = (w[:,k],u[:,k],γ[k+1])
-                w[:,k+1] = RRKγ0_update_lin(flds,ops,dt,rk)
-            end
-            #last step
-            flds = (w[:,Nt-1],u[:,Nt-1],γ[Nt])
-            w[:,Nt] = RRKγ0_update_lin(flds,ops,dt_corr,rk)
-            out_flds = w
-        else
-            ϱ = 0
-            for k=1:Nt-2
-                flds = (w[:,k],u[:,k:k+1],γ[k+1],ϱ)
-                w[:,k+1],ϱ = RRK_update_lin(flds,ops,dt,rk)
-            end
-
-            if ~corr
-                ϱ = 0
-            end
-            flds = (w[:,Nt-1],u[:,Nt-1:Nt],γ[Nt],ϱ,dt)
-            w[:,Nt] = RRK_update_lin_last(flds,ops,dt_corr,rk)
-            out_flds = w
-        end
-
+        RRK_lin!(arrks,ts,rk)
     elseif adj
-    #adjoint RRK algorithm
-        zT,u,γ,dt_corr = in_flds
-        Nt = length(γ)
-        z = zeros(size(u))
-        z[:,Nt] = zT
-
-        if γcnst
-            flds = (z[:,Nt],u[:,Nt-1],γ[Nt])
-            z[:,Nt-1] = RRKγ0_update_adj(flds,ops,dt_corr,rk)
-            for k=Nt-2:-1:1
-                flds = (z[:,k+1],u[:,k],γ[k+1])
-                z[:,k] = RRKγ0_update_adj(flds,ops,dt,rk)
-            end
-            out_flds = z
-        else
-            flds = (z[:,Nt],u[:,Nt-1:Nt],γ[Nt],dt)
-            z[:,Nt-1],ζ = RRK_update_adj_last(flds,ops,dt_corr,rk)
-
-            if ~corr
-                ζ = 0
-            end
-            for k=Nt-2:-1:1
-                flds = (z[:,k+1],u[:,k:k+1],γ[k+1],ζ)
-                z[:,k] = RRK_update_adj(flds,ops,dt,rk)
-            end
-            out_flds = z
-        end
+        RRK_adj!(arrks,ts,rk)
     else
-    #RRK algorithm
-        Nt_tmp = Nt_tmp + ceil(Int,Nt_tmp)
-        f,η,∇η = ops
-        u0 = in_flds
+        RRK_fwd!(arrks,ts,rk)
+    end
+end
 
-        u = zeros(length(u0),Nt_tmp)
-        u[:,1] = u0
-        γ = ones(Nt_tmp)
+function RRK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+    @unpack t0,T,dt = ts
+    Nt = ceil(Int,(T-t0)/dt)+1
+    dt = (T-t0)/(Nt-1)
+    @pack! ts = dt
+    Nt_tmp = Nt + ceil(Int,Nt/2)
 
-        t  = zeros(Nt_tmp)
-        t[1] = t0
-        k  = 0
-        tk = t[1]
-        dt_corr = dt #corrected time step size
-        last_step = false
+    @unpack f,η,∇η = arrks
+    @unpack u0 = arrks
 
-        while tk<T && abs(T-tk)/T>1e-13 && ~last_step
-            k += 1
-            if t[k]+dt > T
-                # @show k
-                # @show tk
-                # @show t[k]+dt
-                last_step = true
-                dt_corr = T-t[k]
-            end
-            flds = (u[:,k],γ[k])
+    u = zeros(length(u0),Nt_tmp)
+    u[:,1] = u0
+    γ = ones(Nt_tmp)
 
-            if(k+1>Nt_tmp)
-                err("Temp data size not large enough. dt must be too big, resulting in |γ-1|>>0")
-            end
+    t  = zeros(Nt_tmp)
+    t[1] = t0
+    k  = 0
+    tk = t[1]
+    dt_corr = dt #corrected time step size
+    last_step = false
 
-            u[:,k+1],γ[k+1] = RRK_update(flds,(f,η,∇η),dt_corr,rk)
-            t[k+1] = t[k] + γ[k+1]*dt_corr
-            tk = t[k+1]
+    while tk<T && abs(T-tk)/T>1e-13 && ~last_step
+        k += 1
+        if t[k]+dt > T
+            # @show k
+            # @show tk
+            # @show t[k]+dt
+            last_step = true
+            dt_corr = T-t[k]
+        end
+        flds = (u[:,k],γ[k])
+
+        if(k+1>Nt_tmp)
+            err("Temp data size not large enough. dt must be not small enough, resulting in |γ-1|>>0")
         end
 
-        Nt  = k+1
-        u   = u[:,1:Nt]
-        γ   = γ[1:Nt]
-
-        out_flds = (u,γ)
-
-        if return_Δη
-            Δηu = zeros(Nt)
-            ηu0 = η(u[:,1])
-            for k=1:Nt-1
-                Δηu[k+1] = η(u[:,k+1])-ηu0
-            end
-            out_flds = (out_flds...,Δηu)
-        end
-        if return_time
-            t  = t[1:Nt]
-            out_flds = (out_flds...,t,dt_corr)
-        end
+        u[:,k+1],γ[k+1] = RRK_update(flds,(f,η,∇η),dt_corr,rk)
+        t[k+1] = t[k] + γ[k+1]*dt_corr
+        tk = t[k+1]
     end
 
-    return out_flds
+    Nt  = k+1
+    u   = u[:,1:Nt]
+    γ   = γ[1:Nt]
+
+    @pack! arrks = u,γ
+    @pack! ts = Nt,dt_corr
+
+    if arrks.return_time
+        t  = t[1:Nt]
+        @pack! ts = t
+    end
+    if arrks.return_Δη
+        Δη = zeros(Nt)
+        η0 = η(u[:,1])
+        for k=1:Nt-1
+            Δη[k+1] = η(u[:,k+1])-η0
+        end
+        @pack! arrks = Δη
+    end
 end
+
+function RRK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+    @unpack dt,Nt,dt_corr = ts
+    @unpack f,df = arrks
+    @unpack u0_lin,u,γ = arrks
+
+    u_lin = zeros(size(u))
+    u_lin[:,1] = u0_lin
+
+    if arrks.γ_cnst
+        for k=1:Nt-2
+            flds = (u_lin[:,k],u[:,k],γ[k+1])
+            u_lin[:,k+1] = RRKγ0_update_lin(flds,(f,df),dt,rk)
+        end
+        #last step
+        flds = (u_lin[:,Nt-1],u[:,Nt-1],γ[Nt])
+        u_lin[:,Nt] = RRKγ0_update_lin(flds,(f,df),dt_corr,rk)
+    else
+        @unpack ∇η,Hη = arrks
+        ϱ = 0
+        for k=1:Nt-2
+            flds = (u_lin[:,k],u[:,k:k+1],γ[k+1],ϱ)
+            u_lin[:,k+1],ϱ = RRK_update_lin(flds,(f,df,∇η,Hη),dt,rk)
+        end
+
+        if arrks.dt_cnst
+             ϱ = 0
+        end
+        flds = (u_lin[:,Nt-1],u[:,Nt-1:Nt],γ[Nt],ϱ,dt)
+        u_lin[:,Nt] = RRK_update_lin_last(flds,(f,df,∇η,Hη),dt_corr,rk)
+    end
+    @pack! arrks = u_lin
+end
+
+function RRK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+    @unpack dt,Nt,dt_corr = ts
+    @unpack f,df = arrks
+    @unpack uT_adj,u,γ = arrks
+
+    u_adj = zeros(size(u))
+    u_adj[:,Nt] = uT_adj
+
+    if arrks.γ_cnst
+        flds = (u_adj[:,Nt],u[:,Nt-1],γ[Nt])
+        u_adj[:,Nt-1] = RRKγ0_update_adj(flds,(f,df),dt_corr,rk)
+        for k=Nt-2:-1:1
+            flds = (u_adj[:,k+1],u[:,k],γ[k+1])
+            u_adj[:,k] = RRKγ0_update_adj(flds,(f,df),dt,rk)
+        end
+    else
+        @unpack ∇η,Hη = arrks
+        flds = (u_adj[:,Nt],u[:,Nt-1:Nt],γ[Nt],dt)
+        u_adj[:,Nt-1],ζ = RRK_update_adj_last(flds,(f,df,∇η,Hη),dt_corr,rk)
+
+        if arrks.dt_cnst
+            ζ = 0
+        end
+        for k=Nt-2:-1:1
+            flds = (u_adj[:,k+1],u[:,k:k+1],γ[k+1],ζ)
+            u_adj[:,k] = RRK_update_adj(flds,(f,df,∇η,Hη),dt,rk)
+        end
+    end
+    @pack! arrks = u_adj
+end
+
+# function RRK_solver(in_flds,ops,Time,rk;
+# lin=false,
+# adj=false,
+# γcnst=false,
+# corr=true,
+# return_time=false,
+# return_Δη=false)
+#
+#     t0,T,dt = Time
+#     Nt_tmp = ceil(Int,(T-t0)/dt)+1
+#     dt = (T-t0)/(Nt_tmp-1)
+#
+#     if lin && ~(adj)
+#     #linearized RRK algorithm
+#         w0,u,γ,dt_corr = in_flds
+#         Nt = length(γ)
+#         w = zeros(size(u))
+#         w[:,1] = w0
+#
+#         if γcnst
+#             for k=1:Nt-2
+#                 flds = (w[:,k],u[:,k],γ[k+1])
+#                 w[:,k+1] = RRKγ0_update_lin(flds,ops,dt,rk)
+#             end
+#             #last step
+#             flds = (w[:,Nt-1],u[:,Nt-1],γ[Nt])
+#             w[:,Nt] = RRKγ0_update_lin(flds,ops,dt_corr,rk)
+#             out_flds = w
+#         else
+#             ϱ = 0
+#             for k=1:Nt-2
+#                 flds = (w[:,k],u[:,k:k+1],γ[k+1],ϱ)
+#                 w[:,k+1],ϱ = RRK_update_lin(flds,ops,dt,rk)
+#             end
+#
+#             if ~corr
+#                 ϱ = 0
+#             end
+#             flds = (w[:,Nt-1],u[:,Nt-1:Nt],γ[Nt],ϱ,dt)
+#             w[:,Nt] = RRK_update_lin_last(flds,ops,dt_corr,rk)
+#             out_flds = w
+#         end
+#
+#     elseif adj
+#     #adjoint RRK algorithm
+#         zT,u,γ,dt_corr = in_flds
+#         Nt = length(γ)
+#         z = zeros(size(u))
+#         z[:,Nt] = zT
+#
+#         if γcnst
+#             flds = (z[:,Nt],u[:,Nt-1],γ[Nt])
+#             z[:,Nt-1] = RRKγ0_update_adj(flds,ops,dt_corr,rk)
+#             for k=Nt-2:-1:1
+#                 flds = (z[:,k+1],u[:,k],γ[k+1])
+#                 z[:,k] = RRKγ0_update_adj(flds,ops,dt,rk)
+#             end
+#             out_flds = z
+#         else
+#             flds = (z[:,Nt],u[:,Nt-1:Nt],γ[Nt],dt)
+#             z[:,Nt-1],ζ = RRK_update_adj_last(flds,ops,dt_corr,rk)
+#
+#             if ~corr
+#                 ζ = 0
+#             end
+#             for k=Nt-2:-1:1
+#                 flds = (z[:,k+1],u[:,k:k+1],γ[k+1],ζ)
+#                 z[:,k] = RRK_update_adj(flds,ops,dt,rk)
+#             end
+#             out_flds = z
+#         end
+#     else
+#     #RRK algorithm
+#         Nt_tmp = Nt_tmp + ceil(Int,Nt_tmp)
+#         f,η,∇η = ops
+#         u0 = in_flds
+#
+#         u = zeros(length(u0),Nt_tmp)
+#         u[:,1] = u0
+#         γ = ones(Nt_tmp)
+#
+#         t  = zeros(Nt_tmp)
+#         t[1] = t0
+#         k  = 0
+#         tk = t[1]
+#         dt_corr = dt #corrected time step size
+#         last_step = false
+#
+#         while tk<T && abs(T-tk)/T>1e-13 && ~last_step
+#             k += 1
+#             if t[k]+dt > T
+#                 # @show k
+#                 # @show tk
+#                 # @show t[k]+dt
+#                 last_step = true
+#                 dt_corr = T-t[k]
+#             end
+#             flds = (u[:,k],γ[k])
+#
+#             if(k+1>Nt_tmp)
+#                 err("Temp data size not large enough. dt must be too big, resulting in |γ-1|>>0")
+#             end
+#
+#             u[:,k+1],γ[k+1] = RRK_update(flds,(f,η,∇η),dt_corr,rk)
+#             t[k+1] = t[k] + γ[k+1]*dt_corr
+#             tk = t[k+1]
+#         end
+#
+#         Nt  = k+1
+#         u   = u[:,1:Nt]
+#         γ   = γ[1:Nt]
+#
+#         out_flds = (u,γ)
+#
+#         if return_Δη
+#             Δηu = zeros(Nt)
+#             ηu0 = η(u[:,1])
+#             for k=1:Nt-1
+#                 Δηu[k+1] = η(u[:,k+1])-ηu0
+#             end
+#             out_flds = (out_flds...,Δηu)
+#         end
+#         if return_time
+#             t  = t[1:Nt]
+#             out_flds = (out_flds...,t,dt_corr)
+#         end
+#     end
+#
+#     return out_flds
+# end
 
 
 

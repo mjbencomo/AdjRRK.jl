@@ -47,6 +47,6 @@ end
 
 # INNER PRODUCT TEST
 @testset "inner product test" begin
-    ipt = AdjRRK.ip_test!(arrks,ts,rk)
+    ipt = AdjRRK.ip_test!(RK_solver!,arrks,ts,rk)
     @test ipt<AdjRRK.IPT_TOL
 end

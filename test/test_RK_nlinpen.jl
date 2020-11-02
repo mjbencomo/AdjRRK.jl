@@ -41,11 +41,11 @@ arrks.u0 = [1.5,1]
 
     arrks_h = AdjRRK_struct(arrks)
     @pack! arrks_h = f,df
-    errs,rate,h = AdjRRK.derv_test!(arrks,arrks_h,ts,rk,h0,Nref)
+    errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks,arrks_h,ts,rk,h0,Nref)
     @test abs(rate[end]-1)<AdjRRK.DRV_TOL
 end
 
 @testset "inner product test" begin
-    ipt = AdjRRK.ip_test!(arrks,ts,rk)
+    ipt = AdjRRK.ip_test!(RK_solver!,arrks,ts,rk)
     @test ipt<AdjRRK.IPT_TOL
 end
