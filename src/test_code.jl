@@ -45,3 +45,26 @@ function ip_test!(solver!,arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     ipt = abs(ipt)
     return ipt /= norm(u_lin)*norm(u_adj[:,end])
 end
+
+# CONVERGENCE TEST
+function conv_test!(solver!,arrks::AdjRRK_struct,ts::Time_struct,rk,dt0,Nref,u_true)
+    dt = zeros(Nref+1)
+    dt[1] = dt0
+    for n=1:Nref
+        dt[n+1] = dt[n]/2
+    end
+
+    errs = zeros(Nref+1)
+    for n=1:Nref+1
+        ts.dt = dt[n]
+        solver!(arrks,ts,rk)
+        @unpack u = arrks
+        errs[n] = norm(u[:,end] - u_true)
+    end
+
+    rates = zeros(Nref)
+    for n=1:Nref
+        rates[n] = log2(errs[n]) - log2(errs[n+1])
+    end
+    return errs,rates,dt
+end

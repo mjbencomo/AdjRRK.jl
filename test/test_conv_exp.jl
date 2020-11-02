@@ -57,53 +57,16 @@ ts = Time_struct()
 t0 = 0
 T  = 5
 @pack! ts = t0,T
+
 dt0 = 0.5
+Nref = 4
 
 arrks.u0 = [1,0.5]
 u_true = true_sol(T)
 
-Nref = 4
-dt = zeros(Nref+1)
-dt[1] = dt0
-for n=1:Nref
-    dt[n+1] = dt[n]/2
-end
-
-
 ## RK convergence run
-solver! = RK_solver!
-
-#RK4
-rk = rk4
-err = zeros(Nref+1)
-for n=1:Nref+1
-    ts.dt = dt[n]
-    solver!(arrks,ts,rk)
-    @unpack u = arrks
-    err[n] = norm(u[:,end] - u_true)
-end
-rates = zeros(Nref)
-for n=1:Nref
-    rates[n] = log2(err[n]) - log2(err[n+1])
-end
-err_RK4 = err
-rates_RK4 = rates
-
-#RK2 = Heun's method
-rk = rk2
-err = zeros(Nref+1)
-for n=1:Nref+1
-    ts.dt = dt[n]
-    solver!(arrks,ts,rk)
-    @unpack u = arrks
-    err[n] = norm(u[:,end] - u_true)
-end
-rates = zeros(Nref)
-for n=1:Nref
-    rates[n] = log2(err[n]) - log2(err[n+1])
-end
-err_RK2 = err
-rates_RK2 = rates
+errs_rk4,rates_RK4,dt = AdjRRK.conv_test!(RK_solver!,arrks,ts,rk4,dt0,Nref,u_true)
+errs_rk2,rates_RK2,dt = AdjRRK.conv_test!(RK_solver!,arrks,ts,rk2,dt0,Nref,u_true)
 
 @testset "RK convergence test" begin
     @test abs(avg(rates_RK4)-4) < AdjRRK.CNV_TOL
@@ -133,39 +96,8 @@ end
 
 
 ## IDT convergence run
-solver! = IDT_solver!
-
-#RK4
-rk = rk4
-err = zeros(Nref+1)
-for n=1:Nref+1
-    ts.dt = dt[n]
-    solver!(arrks,ts,rk)
-    @unpack u = arrks
-    err[n] = norm(u[:,end] - u_true[:])
-end
-rates = zeros(Nref)
-for n=1:Nref
-    rates[n] = log2(err[n]) - log2(err[n+1])
-end
-err_IDT4 = err
-rates_IDT4 = rates
-
-#RK2 = Heun's method
-rk = rk2
-err = zeros(Nref+1)
-for n=1:Nref+1
-    ts.dt = dt[n]
-    solver!(arrks,ts,rk)
-    @unpack u = arrks
-    err[n] = norm(u[:,end] - u_true[:])
-end
-rates = zeros(Nref)
-for n=1:Nref
-    rates[n] = log2(err[n]) - log2(err[n+1])
-end
-err_IDT2 = err
-rates_IDT2 = rates
+errs_IDT4,rates_IDT4,dt = AdjRRK.conv_test!(IDT_solver!,arrks,ts,rk4,dt0,Nref,u_true)
+errs_IDT2,rates_IDT2,dt = AdjRRK.conv_test!(IDT_solver!,arrks,ts,rk2,dt0,Nref,u_true)
 
 @testset "IDT convergence test" begin
     @test abs(avg(rates_IDT4)-3) < AdjRRK.CNV_TOL
@@ -194,39 +126,8 @@ end
 # display(plot!())
 
 ## RRK convergence run
-solver! = RRK_solver!
-
-#RK4
-rk = rk4
-err = zeros(Nref+1)
-for n=1:Nref+1
-    ts.dt = dt[n]
-    solver!(arrks,ts,rk)
-    @unpack u = arrks
-    err[n] = norm(u[:,end] - u_true[:])
-end
-rates = zeros(Nref)
-for n=1:Nref
-    rates[n] = log2(err[n]) - log2(err[n+1])
-end
-err_RRK4 = err
-rates_RRK4 = rates
-
-#RK2 = Heun's method
-rk = rk2
-err = zeros(Nref+1)
-for n=1:Nref+1
-    ts.dt = dt[n]
-    solver!(arrks,ts,rk)
-    @unpack u = arrks
-    err[n] = norm(u[:,end] - u_true[:])
-end
-rates = zeros(Nref)
-for n=1:Nref
-    rates[n] = log2(err[n]) - log2(err[n+1])
-end
-err_RRK2 = err
-rates_RRK2 = rates
+errs_RRK4,rates_RRK4,dt = AdjRRK.conv_test!(RRK_solver!,arrks,ts,rk4,dt0,Nref,u_true)
+errs_RRK2,rates_RRK2,dt = AdjRRK.conv_test!(RRK_solver!,arrks,ts,rk2,dt0,Nref,u_true)
 
 @testset "RRK convergence test" begin
     @test abs(avg(rates_RRK4)-4) < AdjRRK.CNV_TOL
