@@ -3,44 +3,58 @@
 using AdjRRK
 using LinearAlgebra
 using Test
+using UnPack
 
 
+# setting RKs and AdjRRK_struct structs
 rk = rk4
-C = randn(2,2)
-Time = (0,1,0.01)
+arrks = AdjRRK_struct()
 
+# setting time stuff
+ts = Time_struct()
+ts.t0 = 0
+ts.T  = 1
+ts.dt = 0.01
+
+# setting RHS function and its Jacobian
+C = randn(2,2)
 function f(u)
     return C*u
 end
-
 function df(u,δu;adj=false)
     if adj
         return transpose(C)*δu
     end
     return C*δu
 end
+@pack! arrks = f,df
 
-# Solving ODE system
-u0 = randn(2)
-u,t = RK_solver(u0,f,Time,rk;return_time=true)
+# Running RK
+arrks.u0 = randn(2)
+RK_solver!(arrks,ts,rk)
 
 # DERIVATIVE TEST
 # Given that the problem is linear, it suffices to compare the forward algorithm
 # with its linearization.
 @testset "derivative test" begin
-    w0 = u[:,1]
-    w = RK_solver((w0,u),(f,df),Time,rk;lin=true)
-    norm_diff = norm(u-w)/norm(u)
+    arrks.u0_lin = arrks.u0
+    RK_solver!(arrks,ts,rk;lin=true)
+    @unpack u,u_lin = arrks
+
+    norm_diff = norm(u-u_lin)/norm(u)
     @test norm_diff<AdjRRK.DRV_TOL
 end
 
 # INNER PRODUCT TEST
 @testset "inner product test" begin
-    w0 = randn(2)
-    w = RK_solver((w0,u),(f,df),Time,rk;lin=true)
-    zT = randn(2)
-    z = RK_solver((zT,u),(f,df),Time,rk;adj=true)
-    ipt = w[:,1]⋅z[:,1] - w[:,end]⋅z[:,end]
-    ipt = abs(ipt)/norm(w)*norm(z[:,end])
+    arrks.u0_lin = randn(2)
+    RK_solver!(arrks,ts,rk;lin=true)
+    arrks.uT_adj = randn(2)
+    RK_solver!(arrks,ts,rk;adj=true)
+
+    @unpack u_lin,u_adj= arrks
+    ipt = u_lin[:,1]⋅u_adj[:,1] - u_lin[:,end]⋅u_adj[:,end]
+    ipt = abs(ipt)
+    ipt /= norm(u_lin)*norm(u_adj[:,end])
     @test ipt<AdjRRK.IPT_TOL
 end

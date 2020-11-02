@@ -85,72 +85,84 @@ end
 #   w,      lin=true
 #   z,      adj=true
 # ---------------------------------------#
-function RK_solver(in_flds,ops,Time,rk;
+function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;
+return_time=false,
+return_Δη=false,
 lin=false,
-adj=false,
+adj=false )
+
+    if lin && ~(adj)
+        RK_lin!(arrks,ts,rk)
+    elseif adj
+        RK_adj!(arrks,ts,rk)
+    else
+        RK_fwd!(arrks,ts,rk,return_time,return_Δη)
+    end
+end
+
+function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs,
 return_time=false,
 return_Δη=false)
 
-    t0,T,dt = Time
+    #setting up time axis
+    @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
+    @pack! ts = dt,Nt
 
-    if lin && ~(adj)
-    # running linearized RK
-        f,df = ops
-        w0,u = in_flds
-        w = zeros(size(u))
-        w[:,1] = w0
-        for k=1:Nt-1
-            flds = (w[:,k],u[:,k])
-            w[:,k+1] = RK_update_lin(flds,(f,df),dt,rk)
-        end
-        out_flds = w
+    @unpack f = arrks
+    @unpack u0 = arrks
 
-    elseif adj
-    # running adjoint RK
-        f,df = ops
-        zT,u = in_flds
-        z = zeros(size(u))
-        z[:,Nt] = zT
-        for k=Nt-1:-1:1
-            flds = (z[:,k+1],u[:,k])
-            z[:,k] = RK_update_adj(flds,(f,df),dt,rk)
-        end
-        out_flds = z
+    u = zeros(length(u0),Nt)
+    u[:,1] = u0
 
-    else
-    # running standard RK
-        u0 = in_flds
-        u = zeros(length(u0),Nt)
-        u[:,1] = u0
-        if return_Δη #case where Δη is tracked
-            f,η = ops
-            Δηu = zeros(Nt)
-            ηu0 = η(u[:,1])
-            for k=1:Nt-1
-                u[:,k+1] = RK_update(u[:,k],f,dt,rk)
-                Δηu[k+1] = η(u[:,k+1])-ηu0
-            end
-            out_flds = (u,Δηu)
-
-            if return_time
-                t = range(t0,stop=T,length=Nt) |> collect
-                out_flds = (out_flds...,t)
-            end
-
-        else #case where Δη is not tracked
-            f = ops
-            for k=1:Nt-1
-                u[:,k+1] = RK_update(u[:,k],f,dt,rk)
-            end
-            out_flds = u
-
-            if return_time
-                t = range(t0,stop=T,length=Nt) |> collect
-                out_flds = (out_flds,t)
-            end
-        end
+    for k=1:Nt-1
+        u[:,k+1] = RK_update(u[:,k],f,dt,rk)
     end
-    return out_flds
+    @pack! arrks = u
+
+    if return_time
+        t = range(t0,stop=T,length=Nt) |> collect
+        @pack! ts = t
+    end
+
+    if return_Δη
+        @unpack η = arrks
+        Δη = zeros(Nt)
+        η0 = η(u[:,1])
+        for k=1:Nt-1
+            Δηu[k+1] = η(u[:,k+1])-ηu0
+        end
+        @pack! arrks = Δη
+    end
+end
+
+function RK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+    @unpack dt,Nt = ts
+    @unpack f,df = arrks
+    @unpack u0_lin,u = arrks
+
+    u_lin = zeros(size(u))
+    u_lin[:,1] = u0_lin
+
+    for k=1:Nt-1
+        flds = (u_lin[:,k],u[:,k])
+        u_lin[:,k+1] = RK_update_lin(flds,(f,df),dt,rk)
+    end
+    @pack! arrks = u_lin
+end
+
+function RK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+    @unpack dt,Nt = ts
+    @unpack f,df = arrks
+    @unpack uT_adj,u = arrks
+
+    u_adj = zeros(size(u))
+    u_adj[:,Nt] = uT_adj
+
+    for k=Nt-1:-1:1
+        flds = (u_adj[:,k+1],u[:,k])
+        u_adj[:,k] = RK_update_adj(flds,(f,df),dt,rk)
+    end
+    @pack! arrks = u_adj
 end

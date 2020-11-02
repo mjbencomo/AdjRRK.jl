@@ -1,7 +1,7 @@
 module AdjRRK
 
 using LinearAlgebra
-#using Interpolations
+using UnPack
 
 ENT_TOL = 1e-13
 IPT_TOL = 1e-13
@@ -10,8 +10,40 @@ CNV_TOL = 0.5
 
 struct RKs
     stages::Int64
-    b::Array
-    a::Array
+    b::Array{Float64,1}
+    a::Array{Float64,1}
+end
+
+mutable struct Time_struct
+    t0::Float64
+    T::Float64
+    dt::Float64
+    Nt::Int64
+    dt_corr::Float64
+    t::Array{Float64,1}
+    Time_struct() = new(0,0,0,0,0)
+end
+
+mutable struct AdjRRK_struct
+    #functions
+    f; df
+    η; ∇η; Hη
+
+    #fields
+    u::Array{Float64,2}
+    u_lin::Array{Float64,2}
+    u_adj::Array{Float64,2}
+
+    #initial/final values
+    u0::Array{Float64,1}
+    u0_lin::Array{Float64,1}
+    uT_adj::Array{Float64,1}
+
+    #other
+    Δη::Array{Float64,1}
+    γ::Array{Float64,1}
+
+    AdjRRK_struct() = new()
 end
 
 # coefficients for Heun's method
@@ -28,8 +60,10 @@ rk4 = RKs(s_rk4,b_rk4,a_rk4)
 
 include("RK_code.jl")
 include("RRK_code.jl")
+include("test_code.jl")
 
-export RK_solver, IDT_solver, RRK_solver
-export RKs, rk2, rk4
+export RK_solver!, IDT_solver, RRK_solver
+export RKs, rk2, rk4, AdjRRK_struct, Time_struct
+# export derv_test, IP_test
 
 end
