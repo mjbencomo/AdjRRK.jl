@@ -8,8 +8,11 @@
 using AdjRRK
 using LinearAlgebra
 using Plots
+using UnPack
 
 rk = rk4
+arrks = AdjRRK_struct()
+
 
 t0= 0
 T = 100

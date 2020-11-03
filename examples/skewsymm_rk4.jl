@@ -8,11 +8,12 @@
 using AdjRRK
 using LinearAlgebra
 using Plots
+using UnPack
 
 rk = rk4
+arrks = AdjRRK_struct()
+
 A = [0 1; -1 0]
-
-
 function f(u)
     return A*u
 end
@@ -37,14 +38,19 @@ function true_sol(T,u0)
     return exp(A.*T)*u0
 end
 
+@pack! arrks = f,df,η,∇η,Hη
+
+ts = Time_struct()
 t0  = 0
 T   = 100
-dt0 = 1
+@pack! ts = t0,T
 
 u0 = [2,1]
-uT = true_sol(T,u0)
+u0_lin = u0
+uT_adj = true_sol(T,u0)
+@pack! arrks = u0,u0_lin
 
-
+dt0 = 1
 Nref = 6
 dt = zeros(Nref+1)
 dt[1] = dt0
@@ -66,15 +72,19 @@ err_lin_RK = zeros(Nref+1)
 err_adj_RK = zeros(Nref+1)
 
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u = RK_solver(u0,f,Time,rk)
-    w = RK_solver((u0,u),(f,df),Time,rk;lin=true)
-    z = RK_solver((uT,u),(f,df),Time,rk;adj=true) #yields order-4 convergence
-    #z = RK_solver((u[:,end],u),(f,df),Time,rk;adj=true) #yields order-5 convergence
+    ts.dt = dt[n]
+    RK_solver!(arrks,ts,rk)
+    @unpack u = arrks
 
-    err_fwd_RK[n] = norm(u[:,end] - uT)
-    err_lin_RK[n] = norm(w[:,end] - uT)
-    err_adj_RK[n] = norm(z[:,1] - u0)
+    RK_solver!(arrks,ts,rk;lin=true)
+    arrks.uT_adj = u[:,end]
+    #arrks.uT_adj = uT_adj
+    RK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_lin,u_adj = arrks
+
+    err_fwd_RK[n] = norm(u[:,end] - uT_adj)
+    err_lin_RK[n] = norm(u_lin[:,end] - uT_adj)
+    err_adj_RK[n] = norm(u_adj[:,1] - u0)
 end
 
 rates_fwd_RK = comp_rates(err_fwd_RK)

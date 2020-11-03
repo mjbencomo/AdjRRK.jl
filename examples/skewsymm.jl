@@ -14,11 +14,12 @@
 using AdjRRK
 using LinearAlgebra
 using Plots
+using UnPack
 
 rk = rk4
+arrks = AdjRRK_struct()
+
 A = [0 1; -1 0]
-
-
 function f(u)
     return A*u
 end
@@ -39,12 +40,17 @@ function Hη(u,δu;adj=false)
     return δu
 end
 
+@pack! arrks = f,df,η,∇η,Hη
+
+ts = Time_struct()
 t0  = 0
 T   = 100
-dt0 = 1
+@pack! ts = t0,T
 
 u0 = [2,1]
-uT = exp(A.*T)*u0
+u0_lin = u0
+uT_adj = exp(A.*T)*u0
+@pack! arrks = u0,u0_lin,uT_adj
 
 # Time = (t0,T,dt0/2)
 # u_RK,Δη_RK,t_RK = RK_solver(u0,(f,η),Time,rk; return_Δη=true,return_time=true)
@@ -103,6 +109,7 @@ uT = exp(A.*T)*u0
 # plot!(t_RRK,z_RRK[2,:],label="RRK",marker=:star)
 # display(plot!())
 
+dt0 = 1
 Nref = 6
 dt = zeros(Nref+1)
 dt[1] = dt0
@@ -119,21 +126,23 @@ function comp_rates(err)
 end
 
 ## RK convergence run
-solver = RK_solver
+solver! = RK_solver!
 
 err_fwd_RK = zeros(Nref+1)
 err_lin_RK = zeros(Nref+1)
 err_adj_RK = zeros(Nref+1)
 
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u = solver(u0,f,Time,rk)
-    w = solver((u0,u),(f,df),Time,rk;lin=true)
-    z = solver((uT,u),(f,df),Time,rk;adj=true)
+    ts.dt = dt[n]
 
-    err_fwd_RK[n] = norm(u[:,end] - uT)
-    err_lin_RK[n] = norm(w[:,end] - uT)
-    err_adj_RK[n] = norm(z[:,1] - u0)
+    solver!(arrks,ts,rk)
+    solver!(arrks,ts,rk;lin=true)
+    solver!(arrks,ts,rk;adj=true)
+    @unpack u,u_lin,u_adj = arrks
+
+    err_fwd_RK[n] = norm(u[:,end] - uT_adj)
+    err_lin_RK[n] = norm(u_lin[:,end] - uT_adj)
+    err_adj_RK[n] = norm(u_adj[:,1] - u0)
 end
 
 rates_fwd_RK = comp_rates(err_fwd_RK)
@@ -142,7 +151,7 @@ rates_adj_RK = comp_rates(err_adj_RK)
 
 
 ## IDT convergence run
-solver = IDT_solver
+solver = IDT_solver!
 
 err_fwd_IDT   = zeros(Nref+1)
 err_lin_IDTγ0 = zeros(Nref+1)
@@ -151,18 +160,25 @@ err_adj_IDTγ0 = zeros(Nref+1)
 err_adj_IDT   = zeros(Nref+1)
 
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u,γ = solver(u0,(f,η,∇η),Time,rk)
-    wγ0 = solver((u0,u,γ),(f,df),Time,rk;lin=true,γcnst=true)
-    w   = solver((u0,u,γ),(f,df,∇η,Hη),Time,rk;lin=true)
-    zγ0 = solver((uT,u,γ),(f,df),Time,rk;adj=true,γcnst=true)
-    z   = solver((uT,u,γ),(f,df,∇η,Hη),Time,rk;adj=true)
+    ts.dt = dt[n]
 
-    err_fwd_IDT[n]   = norm(u[:,end] - uT)
-    err_lin_IDTγ0[n] = norm(wγ0[:,end] - uT)
-    err_lin_IDT[n]   = norm(w[:,end] - uT)
-    err_adj_IDTγ0[n] = norm(zγ0[:,1] - u0)
-    err_adj_IDT[n]   = norm(z[:,1] - u0)
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
+    err_fwd_IDT[n] = norm(u[:,end] - uT_adj)
+
+    arrks.γ_cnst = true
+    solver!(arrks,ts,rk;lin=true)
+    solver!(arrks,ts,rk;adj=true)
+    @unpack u_lin,u_adj = arrks
+    err_lin_IDTγ0[n] = norm(u_lin[:,end] - uT_adj)
+    err_adj_IDTγ0[n] = norm(u_adj[:,1] - u0)
+
+    arrks.γ_cnst = false
+    solver!(arrks,ts,rk;lin=true)
+    solver!(arrks,ts,rk;adj=true)
+    @unpack u_lin,u_adj = arrks
+    err_lin_IDT[n] = norm(u_lin[:,end] - uT_adj)
+    err_adj_IDT[n] = norm(u_adj[:,1] - u0)
 end
 
 rates_fwd_IDT   = comp_rates(err_fwd_IDT)
@@ -173,7 +189,7 @@ rates_adj_IDT   = comp_rates(err_adj_IDT)
 
 
 ## RRK convergence run
-solver = RRK_solver
+solver! = RRK_solver!
 
 err_fwd_RRK   = zeros(Nref+1)
 err_lin_RRKγ0 = zeros(Nref+1)
@@ -182,18 +198,25 @@ err_adj_RRKγ0 = zeros(Nref+1)
 err_adj_RRK   = zeros(Nref+1)
 
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u,γ,t,dt_corr = solver(u0,(f,η,∇η),Time,rk;return_time=true)
-    wγ0 = solver((u0,u,γ,dt_corr),(f,df),Time,rk;lin=true,γcnst=true)
-    w   = solver((u0,u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;lin=true)
-    zγ0 = solver((uT,u,γ,dt_corr),(f,df),Time,rk;adj=true,γcnst=true)
-    z   = solver((uT,u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;adj=true)
+    ts.dt = dt[n]
 
-    err_fwd_RRK[n]   = norm(u[:,end] - uT)
-    err_lin_RRKγ0[n] = norm(wγ0[:,end] - uT)
-    err_lin_RRK[n]   = norm(w[:,end] - uT)
-    err_adj_RRKγ0[n] = norm(zγ0[:,1] - u0)
-    err_adj_RRK[n]   = norm(z[:,1] - u0)
+    solver!(arrks,ts,rk)
+    @unpack u = arrks
+    err_fwd_RRK[n] = norm(u[:,end] - uT_adj)
+
+    arrks.γ_cnst = true
+    solver!(arrks,ts,rk;lin=true)
+    solver!(arrks,ts,rk;adj=true)
+    @unpack u_lin,u_adj = arrks
+    err_lin_RRKγ0[n] = norm(u_lin[:,end] - uT_adj)
+    err_adj_RRKγ0[n] = norm(u_adj[:,1] - u0)
+
+    arrks.γ_cnst = false
+    solver!(arrks,ts,rk;lin=true)
+    solver!(arrks,ts,rk;adj=true)
+    @unpack u_lin,u_adj = arrks
+    err_lin_RRK[n] = norm(u_lin[:,end] - uT_adj)
+    err_adj_RRK[n] = norm(u_adj[:,1] - u0)
 end
 
 rates_fwd_RRK   = comp_rates(err_fwd_RRK)
@@ -285,27 +308,45 @@ err_RRKγ0 = zeros(Nref+1)
 err_RRK   = zeros(Nref+1)
 
 for n=1:Nref+1
-    Time = (t0,T,dt[n])
-    u = RK_solver(u0,f,Time,rk)
-    w = RK_solver((u0,u),(f,df),Time,rk;lin=true)
-    z = RK_solver((u[:,end],u),(f,df),Time,rk;adj=true)
-    err_RK[n] = norm(z[:,1] - u0)
+    ts.dt = dt[n]
 
-    u,γ = IDT_solver(u0,(f,η,∇η),Time,rk)
-    wγ0 = IDT_solver((u0,u,γ),(f,df),Time,rk,;lin=true,γcnst=true)
-    w   = IDT_solver((u0,u,γ),(f,df,∇η,Hη),Time,rk;lin=true)
-    zγ0 = IDT_solver((u[:,end],u,γ),(f,df),Time,rk;adj=true,γcnst=true)
-    z   = IDT_solver((u[:,end],u,γ),(f,df,∇η,Hη),Time,rk;adj=true)
-    err_IDTγ0[n] = norm(zγ0[:,1] - u0)
-    err_IDT[n]   = norm(z[:,1] - u0)
+    RK_solver!(arrks,ts,rk)
+    @unpack u = arrks
+    arrks.uT_adj = u[:,end]
 
-    u,γ,t,dt_corr = RRK_solver(u0,(f,η,∇η),Time,rk;return_time=true)
-    wγ0 = RRK_solver((u0,u,γ,dt_corr),(f,df),Time,rk;lin=true,γcnst=true)
-    w   = RRK_solver((u0,u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;lin=true)
-    zγ0 = RRK_solver((u[:,end],u,γ,dt_corr),(f,df),Time,rk;adj=true,γcnst=true)
-    z   = RRK_solver((u[:,end],u,γ,dt_corr),(f,df,∇η,Hη),Time,rk;adj=true)
-    err_RRKγ0[n] = norm(zγ0[:,1] - u0)
-    err_RRK[n]   = norm(z[:,1] - u0)
+    RK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_RK[n] = norm(u_adj[:,1] - u0)
+
+    #IDT
+    IDT_solver!(arrks,ts,rk)
+    @unpack u = arrks
+    arrks.uT_adj = u[:,end]
+
+    arrks.γ_cnst = true
+    IDT_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_IDTγ0[n] = norm(u_adj[:,1] - u0)
+
+    arrks.γ_cnst = false
+    IDT_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_IDT[n] = norm(u_adj[:,1] - u0)
+
+    #RRK
+    RRK_solver!(arrks,ts,rk)
+    @unpack u = arrks
+    arrks.uT_adj = u[:,end]
+
+    arrks.γ_cnst = true
+    RRK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_RRKγ0[n] = norm(u_adj[:,1] - u0)
+
+    arrks.γ_cnst = false
+    RRK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_RRK[n] = norm(u_adj[:,1] - u0)
 end
 
 rates_RK    = comp_rates(err_RK)
