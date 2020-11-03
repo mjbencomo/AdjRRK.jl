@@ -206,7 +206,10 @@ end
 
 CN = (N+1)^2/2  # estimated trace constant
 dt = CFL * 2 / (CN*K1D)
-Time = (0,T,dt)
+t0 = 0
+
+ts = Time_struct()
+@pack! ts = t0,T,dt
 
 Q0 = vec.(Q0)
 u0 = tuple_to_arr(Q0)
@@ -246,24 +249,37 @@ function ∇η(u)
     return tuple_to_arr(VU)
 end
 
+arrks = AdjRRK_struct()
+@pack! arrks = f,df,η,∇η
+@pack! arrks = u0
+arrks.u0_lin = u0
+arrks.return_time = true
+arrks.return_Δη = true
 
-u_RK,Δη_RK,t_RK = RK_solver(u0,(f,η),Time,rk4;return_time=true,return_Δη=true)
-Q_RK = arr_to_tuple(u_RK[:,end])
+#Running RK
+RK_solver!(arrks,ts,rk4)
+Δη_RK = arrks.Δη
+t_RK = ts.t
+Q_RK = arr_to_tuple(arrks.u[:,end])
 Q_RK = (x->reshape(x,length(rd.r),md.K)).(Q_RK)
 # gr(aspect_ratio=1,legend=false)
 display(scatter((x->rd.Vp*x).((x,Q_RK[1])),zcolor=rd.Vp*Q_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
 display(plot(t_RK,Δη_RK))
 
-u_RRK, γ_RRK, Δη_RRK, t_RRK, last_dt = RRK_solver(u0,(f,η,∇η),Time,rk4;return_time=true,return_Δη=true)
-Q_RRK = arr_to_tuple(u_RRK[:,end])
+#Running lin RK
+RK_solver!(arrks,ts,rk4;lin=true)
+W_RK = arr_to_tuple(arrks.u_lin[:,end])
+W_RK = (x->reshape(x,length(rd.r),md.K)).(W_RK)
+display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
+
+
+#Running RRK
+RRK_solver!(arrks,ts,rk4)
+Δη_RRK = arrks.Δη
+γ_RRK  = arrks.γ
+t_RRK  = ts.t
+Q_RRK = arr_to_tuple(arrks.u[:,end])
 Q_RRK = (x->reshape(x,length(rd.r),md.K)).(Q_RRK)
 display(scatter((x->rd.Vp*x).((x,Q_RRK[1])),zcolor=rd.Vp*Q_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
 display(plot(t_RRK,Δη_RRK))
 display(plot(t_RRK,γ_RRK))
-
-
-w_RK = RK_solver((u0,u_RK),(f,df),Time,rk4;lin=true)
-W_RK = arr_to_tuple(w_RK[:,end])
-W_RK = (x->reshape(x,length(rd.r),md.K)).(W_RK)
-# gr(aspect_ratio=1,legend=false)
-display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
