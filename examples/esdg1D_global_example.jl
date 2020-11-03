@@ -96,8 +96,8 @@ global_SBP_ops = (Qg,Bg,Vhg,Phg,VhPg,Vqg)
 function LF_dissipation(rhoL,rhouL,EL,rhoR,rhouR,ER)
     QL = rhoL,rhouL,EL
     QR = rhoR,rhouR,ER
-    λL = abs.(wavespeed_1D(QL...))
-    λR = abs.(wavespeed_1D(QR...))
+    λL = 0#abs.(wavespeed_1D(QL...))
+    λR = 0#abs.(wavespeed_1D(QR...))
     return ((uL,uR)->.5*max.(λL,λR)*(uR-uL)).(QL,QR)
 end
 
@@ -156,6 +156,7 @@ function rhs_global_jac(Q)
 
     # compute jacobian using chain rule
     return kron(I(Nfields),Vhg') * (Jac + JLF) * dUdV * kron(I(Nfields),VhPg) * dVdU * kron(I(Nfields),Vqg)
+    #return kron(I(Nfields),-2*Phg) * (Jac - JLF) * dUdV * kron(I(Nfields),VhPg) * dVdU * kron(I(Nfields),Vqg)
 end
 
 #######################################################
@@ -273,13 +274,52 @@ W_RK = (x->reshape(x,length(rd.r),md.K)).(W_RK)
 display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
 
 
-#Running RRK
-RRK_solver!(arrks,ts,rk4)
-Δη_RRK = arrks.Δη
-γ_RRK  = arrks.γ
-t_RRK  = ts.t
-Q_RRK = arr_to_tuple(arrks.u[:,end])
-Q_RRK = (x->reshape(x,length(rd.r),md.K)).(Q_RRK)
-display(scatter((x->rd.Vp*x).((x,Q_RRK[1])),zcolor=rd.Vp*Q_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
-display(plot(t_RRK,Δη_RRK))
-display(plot(t_RRK,γ_RRK))
+#running derv test of df
+δu = randn(size(u0))
+h0 = 2^(-10)
+Nref = 10
+h = zeros(Nref+1)
+h[1] = h0
+for n=1:Nref
+    h[n+1] = h[n]/2
+end
+errs = zeros(Nref+1)
+rate = zeros(Nref)
+
+f0 = f(u0)
+df0 = df(u0,δu)
+dfh = zeros(size(f0))
+for n=1:Nref+1
+    uh = u0 + h[n].*δu
+    fh = f(uh)
+    dfh = (fh-f0)./h[n]
+    errs[n] = norm( dfh - df0 )
+end
+
+for n=1:Nref
+    rate[n] = log2(errs[n]) - log2(errs[n+1])
+end
+
+
+#Running deriv test on lin RK
+# arrks.return_time = false
+# arrks.return_Δη = false
+# arrks.u0_lin = randn(size(u0))
+# Nref = 10
+# h0 = 2^(-10)
+# arrks_h = AdjRRK_struct(arrks)
+# @pack! arrks_h = f,df
+# errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks,arrks_h,ts,rk4,h0,Nref)
+
+
+
+# #Running RRK
+# RRK_solver!(arrks,ts,rk4)
+# Δη_RRK = arrks.Δη
+# γ_RRK  = arrks.γ
+# t_RRK  = ts.t
+# Q_RRK = arr_to_tuple(arrks.u[:,end])
+# Q_RRK = (x->reshape(x,length(rd.r),md.K)).(Q_RRK)
+# display(scatter((x->rd.Vp*x).((x,Q_RRK[1])),zcolor=rd.Vp*Q_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
+# display(plot(t_RRK,Δη_RRK))
+# display(plot(t_RRK,γ_RRK))
