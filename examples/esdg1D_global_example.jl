@@ -21,7 +21,7 @@ using AdjRRK
 N = 3
 K1D = 16
 CFL = .25
-T = .5
+T = 0.5
 Nfields = 3
 
 ################################################################################
@@ -53,7 +53,7 @@ build_periodic_boundary_maps!(md,rd,LX)
 
 @unpack x = md
 #initial condition
-rho = @. 1 + .5*exp(-25*(x^2))
+rho = @. 1 + .5*exp(-100*(x-.1)^2)
 u = @. 0*x
 p = @. rho^γ
 
@@ -88,7 +88,8 @@ end
 Qg = droptol!(build_rhs_matrix(rhs,size(Vh,1),md.K,rd,md),1e-12)
 Bg = droptol!(build_rhs_matrix(rhsB,size(Vh,1),md.K,rd,md),1e-12)
 Vqg,Vhg,VhPg = (A->kron(I(md.K),A)).((Vq,Vh,VhP))
-Phg = kron(I(md.K),Ph)
+#Phg = kron(I(md.K),Ph)
+Phg = kron(diagm(1 ./ md.J[1,:]),Ph)
 
 QgTr = sparse(transpose(Qg))
 global_SBP_ops = (Qg,QgTr,Bg,Vhg,Phg,VhPg,Vqg)
@@ -96,10 +97,10 @@ global_SBP_ops = (Qg,QgTr,Bg,Vhg,Phg,VhPg,Vqg)
 function LF_dissipation(rhoL,rhouL,EL,rhoR,rhouR,ER)
     QL = rhoL,rhouL,EL
     QR = rhoR,rhouR,ER
-    # λL = abs.(wavespeed_1D(QL...))
-    # λR = abs.(wavespeed_1D(QR...))
-    # λavg =.5*(λL+λR)
-    λavg = 0#1.
+    λL = abs.(wavespeed_1D(QL...))
+    λR = abs.(wavespeed_1D(QR...))
+    λavg =.5*(λL+λR)
+    # λavg = 1.
     return ((uL,uR)->.5*λavg*(uR-uL)).(QL,QR)
 end
 
@@ -384,7 +385,7 @@ ts_RRK = Time_struct()
 @pack! ts_RRK = t0,T,dt
 
 arrks_RRK = AdjRRK_struct()
-@pack! arrks_RRK = f,df,η,∇η
+@pack! arrks_RRK = f,df,η,∇η,Hη
 @pack! arrks_RRK = u0
 arrks_RRK.u0_lin = u0
 arrks_RRK.return_time = true
@@ -401,13 +402,13 @@ display(plot(ts_RRK.t,arrks_RRK.γ,legend=false))
 arrks_RRK.uT_adj = arrks_RRK.u[:,end]
 
 #running linearized solver
-RK_solver!(arrks_RRK,ts_RRK,rk4;lin=true)
+RRK_solver!(arrks_RRK,ts_RRK,rk4;lin=true)
 W_RRK = arr_to_tuple(arrks_RRK.u_lin[:,end])
 W_RRK = (x->reshape(x,length(rd.r),md.K)).(W_RRK)
 display(scatter((x->rd.Vp*x).((x,W_RRK[1])),zcolor=rd.Vp*W_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
 
 #running adjoint solver
-RK_solver!(arrks_RRK,ts_RRK,rk4;adj=true)
+RRK_solver!(arrks_RRK,ts_RRK,rk4;adj=true)
 Z_RRK = arr_to_tuple(arrks_RRK.u_adj[:,1])
 Z_RRK = (x->reshape(x,length(rd.r),md.K)).(Z_RRK)
 display(scatter((x->rd.Vp*x).((x,Z_RRK[1])),zcolor=rd.Vp*Z_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
