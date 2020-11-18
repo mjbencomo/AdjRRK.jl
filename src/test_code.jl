@@ -34,10 +34,10 @@ end
 function ip_test!(solver!,arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     solver!(arrks,ts,rk)
 
-    arrks.u0_lin = randn(2)
+    arrks.u0_lin = randn(length(arrks.u0))
     solver!(arrks,ts,rk;lin=true)
 
-    arrks.uT_adj = randn(2)
+    arrks.uT_adj = randn(length(arrks.u0))
     solver!(arrks,ts,rk;adj=true)
 
     @unpack u_lin,u_adj = arrks
