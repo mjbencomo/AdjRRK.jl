@@ -21,7 +21,7 @@ using AdjRRK
 N = 3
 K1D = 16
 CFL = .25
-T = 0.5
+T = 0.25
 Nfields = 3
 
 ################################################################################
@@ -53,7 +53,10 @@ build_periodic_boundary_maps!(md,rd,LX)
 
 @unpack x = md
 #initial condition
-rho = @. 1 + .5*exp(-100*(x-.1)^2)
+w = 25*2
+rho = @. 1 + .5*exp(-w*(x-.1)^2)
+#rho = @. 2.5*(abs.(x)<1/2) + 2*(abs.(x)>=1/2)
+#rho = @. 1+ (x<0)
 u = @. 0*x
 p = @. rho^γ
 
@@ -89,7 +92,8 @@ Qg = droptol!(build_rhs_matrix(rhs,size(Vh,1),md.K,rd,md),1e-12)
 Bg = droptol!(build_rhs_matrix(rhsB,size(Vh,1),md.K,rd,md),1e-12)
 Vqg,Vhg,VhPg = (A->kron(I(md.K),A)).((Vq,Vh,VhP))
 #Phg = kron(I(md.K),Ph)
-Phg = kron(diagm(1 ./ md.J[1,:]),Ph)
+Phg = kron(diagm(vec(1 ./ md.J[1,:])),Ph)
+
 
 QgTr = sparse(transpose(Qg))
 global_SBP_ops = (Qg,QgTr,Bg,Vhg,Phg,VhPg,Vqg)
@@ -100,7 +104,7 @@ function LF_dissipation(rhoL,rhouL,EL,rhoR,rhouR,ER)
     λL = abs.(wavespeed_1D(QL...))
     λR = abs.(wavespeed_1D(QR...))
     λavg =.5*(λL+λR)
-    # λavg = 1.
+    #λavg = 0
     return ((uL,uR)->.5*λavg*(uR-uL)).(QL,QR)
 end
 
@@ -236,7 +240,7 @@ function Hη(u,δu;adj=false)
     return H*δu
 end
 
-# #running derv test of df
+#running derv test of df
 # u = u0 #randn(size(u0)).+10
 # δu = randn(size(u0))
 # h0 = 2^(-10)
@@ -340,7 +344,6 @@ ts_RK = Time_struct()
 arrks_RK = AdjRRK_struct()
 @pack! arrks_RK = f,df,η,∇η
 @pack! arrks_RK = u0
-arrks_RK.u0_lin = u0
 arrks_RK.return_time = true
 arrks_RK.return_Δη = true
 
@@ -352,15 +355,15 @@ Q_RK = (x->reshape(x,length(rd.r),md.K)).(Q_RK)
 display(scatter((x->rd.Vp*x).((x,Q_RK[1])),zcolor=rd.Vp*Q_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
 display(plot(ts_RK.t,arrks_RK.Δη,legend=false))
 
-arrks_RK.uT_adj = arrks_RK.u[:,end]
-
 #running linearized solver
+arrks_RK.u0_lin = u0
 RK_solver!(arrks_RK,ts_RK,rk4;lin=true)
 W_RK = arr_to_tuple(arrks_RK.u_lin[:,end])
 W_RK = (x->reshape(x,length(rd.r),md.K)).(W_RK)
 display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
 
 #running adjoint solver
+arrks_RK.uT_adj = arrks_RK.u[:,end]
 RK_solver!(arrks_RK,ts_RK,rk4;adj=true)
 Z_RK = arr_to_tuple(arrks_RK.u_adj[:,1])
 Z_RK = (x->reshape(x,length(rd.r),md.K)).(Z_RK)
@@ -368,15 +371,19 @@ display(scatter((x->rd.Vp*x).((x,Z_RK[3])),zcolor=rd.Vp*Z_RK[3],msw=0,ms=2,cam=(
 
 
 # #running deriv test on lin RK
-# arrks.return_time = false
-# arrks.return_Δη = false
-# arrks.u0_lin = randn(size(u0))
-# Nref = 3
+# arrks_RK.return_time = false
+# arrks_RK.return_Δη = false
+# arrks_RK.u0_lin = randn(size(u0))
+# Nref = 8
 # h0 = 2^(-6)
-# arrks_h = AdjRRK_struct(arrks)
+# arrks_h = AdjRRK_struct(arrks_RK)
 # @pack! arrks_h = f,df
-# errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks,arrks_h,ts,rk4,h0,Nref)
+# errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks_RK,arrks_h,ts_RK,rk4,h0,Nref)
 # @show rate
+#
+# #inner product test
+# ipt = AdjRRK.ip_test!(RK_solver!,arrks_RK,ts_RK,rk4)
+
 
 ## RRK example
 
