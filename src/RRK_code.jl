@@ -1,38 +1,312 @@
-# Algorithms for simple explicit RRK methods.
+## Algorithms for simple explicit RRK methods.
+# function RK_int(u,f,dt,rk::RKs)
+#     S = rk.stages
+#     U = zeros(length(u),S)
+#     F = zeros(length(u),S)
+#
+#     U[:,1] = u
+#     F[:,1] = f(u)
+#     for s=2:S
+#         U[:,s] = @. u + dt*rk.a[s-1]*F[:,s-1]
+#         F[:,s] = f(U[:,s])
+#     end
+#     return U,F
+# end
+#
+# function RK_int_lin(flds,ops,dt,rk::RKs)
+#     w,u  = flds
+#     f,df = ops
+#     S = rk.stages
+#     U = zeros(length(u),S)
+#     F = zeros(length(u),S)
+#     W = zeros(length(u),S)
+#     JW = zeros(length(u),S)
+#
+#     U[:,1] = u
+#     F[:,1] = f(U[:,1])
+#     W[:,1] = w
+#     JW[:,1] = df(U[:,1],W[:,1])
+#     for s=2:S
+#         U[:,s] = @. u + dt*rk.a[s-1]*F[:,s-1]
+#         F[:,s] = f(U[:,s])
+#
+#         W[:,s] = @. w + dt*rk.a[s-1]*JW[:,s-1]
+#         JW[:,s] = df(U[:,s],W[:,s])
+#     end
+#     return U,F,W,JW
+# end
+#
+# function RRK_update(flds,ops,dt,rk::RKs)
+#     u,γ0   = flds
+#     f,η,∇η = ops
+#     U,F = RK_int(u,f,dt,rk)
+#
+#     d = zeros(length(u))
+#     e = 0
+#     for s=1:rk.stages
+#         d = @. d + rk.b[s].*F[:,s]
+#         e = e + rk.b[s]*( ∇η(U[:,s])⋅F[:,s] )
+#     end
+#     d = @. dt*d
+#     e = dt*e
+#     ηu = η(u)
+#
+#     function r(γ)
+#         return η(@. u + γ*d) - ηu - γ*e
+#     end
+#
+#     γ = 1
+#     #this tol should be relative to η(u0)
+#     if abs(r(1)) > 1e-15
+#         γL = 0.9*γ0
+#         γR = 1.1*γ0
+#         i = 1
+#         imax = 10
+#         while r(γL)>0 && i<=imax
+#             γR = γL
+#             γL = γL*0.5
+#             i  = i+1
+#             if(i==imax)
+#                 @show dt
+#                 @show γ0
+#                 @show γL
+#                 @show r(γ0)
+#                 @show r(γL)
+#                 @show r(0)
+#                 @show r(0.5)
+#                 @show r(1)
+#                 error("Exiting from RRK_update, could not find γL<0 under 10 iterations")
+#             end
+#         end
+#
+#         i = 1
+#         while r(γR)<0 && i<=imax
+#             γL = γR
+#             γR = γR*2
+#             i  = i+1
+#             if i==imax
+#                 error("Exiting from RRK_update, could not find γR>0 under 10 iterations")
+#             end
+#         end
+#         γ = bisect(γL,γR,r)
+#     end
+#     u = u + γ*d
+#
+#     return u,γ
+# end
+#
+# function RRK_update_lin(flds,ops,dt,rk::RKs)
+#     w,u,γ,ϱ = flds
+#     f,df,∇η,Hη = ops
+#     S = rk.stages
+#     b = rk.b
+#     a = rk.a
+#
+#     u1 = u[:,1]
+#     u2 = u[:,2]
+#
+#     U,F,W,JW = RK_int_lin((w,u1),(f,df),dt,rk)
+#
+#     ∇ηu2 = ∇η(u2)
+#     Γw = ( ∇ηu2 - ∇η(u1) )⋅w
+#     Γ̃W = 0
+#     rγ = 0
+#     for s=1:S
+#         ∇ηd = ∇ηu2-∇η(U[:,s])
+#         rγ = rγ + b[s]*( ∇ηd⋅F[:,s] )
+#         Γ̃W = Γ̃W + b[s]*( ∇ηd⋅JW[:,s] - F[:,s]⋅Hη(U[:,s],W[:,s]) )
+#     end
+#     rγ = dt*rγ
+#     Γ̃W = γ*dt*Γ̃W
+#     ρ = Γ̃W + Γw
+#     ρ = -ρ/rγ
+#
+#     dw = zeros(length(w))
+#     for s=1:S
+#         dw = @. dw + b[s]*( γ*JW[:,s] + ρ*F[:,s] )
+#     end
+#     ϱ += ρ
+#     return (@. w + dt*dw, ϱ )
+# end
+#
+# function RRK_update_adj(flds,ops,dt,rk::RKs)
+#     z,u,γ,ζ = flds
+#     f,df,∇η,Hη = ops
+#     S = rk.stages
+#     b = rk.b
+#     a = rk.a
+#
+#     u1 = u[:,1]
+#     u2 = u[:,2]
+#
+#     U,F = RK_int(u1,f,dt,rk)
+#
+#     ∇ηu2 = ∇η(u2)
+#     Γ̃  = zeros(length(u1),S)
+#     rγ = 0
+#     ξ  = 0
+#     for s=1:S
+#         ∇ηd    = ∇ηu2-∇η(U[:,s])
+#         Γ̃[:,s] = b[s].*( df(U[:,s],∇ηd;adj=true) - Hη(U[:,s],F[:,s];adj=true) )
+#         rγ     = rγ + b[s]*( ∇ηd⋅F[:,s] )
+#         ξ      = ξ  + b[s]*( F[:,s]⋅z )
+#     end
+#     rγ = dt*rγ
+#     Γ̃  = -γ*dt/rγ .* Γ̃
+#     Γ  = ( ∇η(u1)-∇ηu2 )./rγ
+#     ξ  = dt*ξ - ζ
+#
+#     Z = df(U[:,S],z;adj=true)
+#     Z = @. dt*γ*b[S]*Z + ξ*Γ̃[:,S]
+#     dz = Z
+#     for s=S-1:-1:1
+#         Z = @. γ*b[s]*z + a[s]*Z
+#         Z = df(U[:,s],Z;adj=true)
+#         Z = @. dt*Z + ξ*Γ̃[:,s]
+#         dz = @. dz + Z
+#     end
+#     return @. z + dz + ξ*Γ
+# end
+#
+# function RRK_update_lin_last(flds,ops,dt_corr,rk::RKs)
+#     w,u,γ,ϱ,dt_old = flds
+#     f,df,∇η,Hη = ops
+#     S = rk.stages
+#     b = rk.b
+#     a = rk.a
+#
+#     u1 = u[:,1]
+#     u2 = u[:,2]
+#
+#     U = zeros(length(u1),S)
+#     F = zeros(length(u1),S)
+#     W = zeros(length(u1),S)
+#     JW = zeros(length(u1),S)
+#
+#     U[:,1] = u1
+#     F[:,1] = f(U[:,1])
+#     W[:,1] = w
+#     JW[:,1] = df(U[:,1],W[:,1])
+#     for s=2:S
+#         U[:,s] = @. u1 + dt_corr*a[s-1]*F[:,s-1]
+#         F[:,s] = f(U[:,s])
+#         W[:,s] = @. w + dt_corr*a[s-1]*( JW[:,s-1] - dt_old/dt_corr*ϱ*F[:,s-1] )
+#         JW[:,s] = df(U[:,s],W[:,s])
+#     end
+#
+#     ∇ηu2 = ∇η(u2)
+#     Γw = ( ∇ηu2 - ∇η(u1) )⋅w
+#     Γ̃W = 0
+#     rγ = 0
+#     for s=1:S
+#         ∇ηd = ∇ηu2-∇η(U[:,s])
+#         rγ = rγ + b[s]*( ∇ηd⋅F[:,s] )
+#         Γ̃W = Γ̃W + b[s]*( ∇ηd⋅JW[:,s] - F[:,s]⋅Hη(U[:,s],W[:,s]) )
+#     end
+#     rγ = dt_corr*rγ
+#     Γ̃W = γ*dt_corr*Γ̃W
+#     ρ = Γ̃W + Γw
+#     ρ = -ρ/rγ
+#
+#     dw = zeros(length(w))
+#     for s=1:S
+#         dw = @. dw + b[s]*( γ*JW[:,s] + ρ*F[:,s] )
+#     end
+#     return @. w + dt_corr*dw
+# end
+#
+# function RRK_update_adj_last(flds,ops,dt_corr,rk::RKs)
+#     z,u,γ,dt_old = flds
+#     f,df,∇η,Hη = ops
+#     S = rk.stages
+#     b = rk.b
+#     a = rk.a
+#
+#     u1 = u[:,1]
+#     u2 = u[:,2]
+#
+#     U,F = RK_int(u1,f,dt_corr,rk)
+#
+#     ∇ηu2 = ∇η(u2)
+#     Γ̃  = zeros(length(u1),S)
+#     rγ = 0
+#     ξ  = 0
+#     for s=1:S
+#         ∇ηd    = ∇ηu2-∇η(U[:,s])
+#         Γ̃[:,s] = b[s].*( df(U[:,s],∇ηd;adj=true) - Hη(U[:,s],F[:,s];adj=true) )
+#         rγ     = rγ + b[s]*( ∇ηd⋅F[:,s] )
+#         ξ      = ξ  + b[s]*( F[:,s]⋅z )
+#     end
+#     rγ = dt_corr*rγ
+#     Γ̃  = -γ*dt_corr/rγ .* Γ̃
+#     Γ  = ( ∇η(u1)-∇ηu2 )./rγ
+#     ξ  = dt_corr*ξ
+#
+#     Z = df(U[:,S],z;adj=true)
+#     Z = @. dt_corr*γ*b[S]*Z + ξ*Γ̃[:,S]
+#     dz = Z
+#     ζ = 0
+#     for s=S-1:-1:1
+#         ζ += a[s]*( F[:,s]⋅Z )
+#         Z = @. γ*b[s]*z + a[s]*Z
+#         Z = df(U[:,s],Z;adj=true)
+#         Z = @. dt_corr*Z + ξ*Γ̃[:,s]
+#         dz = @. dz + Z
+#     end
+#     ζ *= dt_old
+#     return (@. z + dz + ξ*Γ, ζ)
+# end
 
-function RK_int(u,f,dt,rk::RKs)
-    S = rk.stages
-    U = zeros(length(u),S)
-    F = zeros(length(u),S)
+
+
+function RK_int(u,f,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
+    U = zeros(length(u),s)
+    F = zeros(length(u),s)
 
     U[:,1] = u
     F[:,1] = f(u)
-    for s=2:S
-        U[:,s] = @. u + dt*rk.a[s-1]*F[:,s-1]
-        F[:,s] = f(U[:,s])
+    for i=2:s
+        for j=1:i-1
+            U[:,i] += A[i,j]*F[:,j]
+        end
+        U[:,i] = u + dt*U[:,i]
+        F[:,i] = f(U[:,i])
     end
     return U,F
 end
 
-function RK_int_lin(flds,ops,dt,rk::RKs)
+function RK_int_lin(flds,ops,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
     w,u  = flds
     f,df = ops
-    S = rk.stages
-    U = zeros(length(u),S)
-    F = zeros(length(u),S)
-    W = zeros(length(u),S)
-    JW = zeros(length(u),S)
+    U = zeros(length(u),s)
+    F = zeros(length(u),s)
+    W = zeros(length(u),s)
+    JW = zeros(length(u),s)
 
+    #computing internal fwd stages
     U[:,1] = u
     F[:,1] = f(U[:,1])
+    for i=2:s
+        for j=1:i-1
+            U[:,i] += A[i,j]*F[:,j]
+        end
+        U[:,i] = u + dt*U[:,i]
+        F[:,i] = f(U[:,i])
+    end
+
+    #linear internal stages
     W[:,1] = w
     JW[:,1] = df(U[:,1],W[:,1])
-    for s=2:S
-        U[:,s] = @. u + dt*rk.a[s-1]*F[:,s-1]
-        F[:,s] = f(U[:,s])
-
-        W[:,s] = @. w + dt*rk.a[s-1]*JW[:,s-1]
-        JW[:,s] = df(U[:,s],W[:,s])
+    for i=2:s
+        for j=1:i-1
+            W[:,i] += A[i,j]*JW[:,j]
+        end
+        W[:,i] = w + dt*W[:,i]
+        JW[:,i] = df(U[:,i],W[:,i])
     end
     return U,F,W,JW
 end
@@ -54,19 +328,21 @@ function bisect(γL,γR,r;rtol=1e-15,γtol=1e-15,nmax=10000)
      error("Exiting from bisect, could not find root under $nmax iterations.\\ γ=$γm, r(γ)=$rm")
 end
 
-function RRK_update(flds,ops,dt,rk::RKs)
+function RRK_update(flds,ops,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
     u,γ0   = flds
     f,η,∇η = ops
     U,F = RK_int(u,f,dt,rk)
 
     d = zeros(length(u))
     e = 0
-    for s=1:rk.stages
-        d = @. d + rk.b[s].*F[:,s]
-        e = e + rk.b[s]*( ∇η(U[:,s])⋅F[:,s] )
+    for j=1:s
+        d += b[j].*F[:,j]
+        e += b[j]*( ∇η(U[:,j])⋅F[:,j] )
     end
-    d = @. dt*d
-    e = dt*e
+    d *= dt
+    e *= dt
     ηu = η(u)
 
     function r(γ)
@@ -113,60 +389,57 @@ function RRK_update(flds,ops,dt,rk::RKs)
     return u,γ
 end
 
-function RRKγ0_update_lin(flds,ops,dt,rk::RKs)
+function RRKγ0_update_lin(flds,ops,dt,rk::RK_struct)
     w,u,γ = flds
-    new_b = rk.b .* γ
-    new_rk = RKs(rk.stages,new_b,rk.a)
+    new_b = γ .* rk.b
+    new_rk = RK_struct(rk.stages,new_b,rk.A)
     return RK_update_lin((w,u),ops,dt,new_rk)
 end
 
-function RRKγ0_update_adj(flds,ops,dt,rk::RKs)
+function RRKγ0_update_adj(flds,ops,dt,rk::RK_struct)
     z,u,γ = flds
-    new_b = rk.b .* γ
-    new_rk = RKs(rk.stages,new_b,rk.a)
+    new_b = γ .* rk.b
+    new_rk = RK_struct(rk.stages,new_b,rk.A)
     return RK_update_adj((z,u),ops,dt,new_rk)
 end
 
-function RRK_update_lin(flds,ops,dt,rk::RKs)
+function RRK_update_lin(flds,ops,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
     w,u,γ,ϱ = flds
     f,df,∇η,Hη = ops
-    S = rk.stages
-    b = rk.b
-    a = rk.a
 
-    u1 = u[:,1]
+    u1 = u[:,1] #this may need to be changed
     u2 = u[:,2]
 
     U,F,W,JW = RK_int_lin((w,u1),(f,df),dt,rk)
 
     ∇ηu2 = ∇η(u2)
-    Γw = ( ∇ηu2 - ∇η(u1) )⋅w
-    Γ̃W = 0
-    rγ = 0
-    for s=1:S
-        ∇ηd = ∇ηu2-∇η(U[:,s])
-        rγ = rγ + b[s]*( ∇ηd⋅F[:,s] )
-        Γ̃W = Γ̃W + b[s]*( ∇ηd⋅JW[:,s] - F[:,s]⋅Hη(U[:,s],W[:,s]) )
+    ∇γ_uw = ( ∇ηu2 - ∇η(u1) )⋅w
+    ∇γ_UW = 0
+    ∂r_γ  = 0
+    for j=1:s
+        ∇ηd = ∇ηu2-∇η(U[:,j])
+        ∂r_γ += b[j]*( ∇ηd⋅F[:,j] )
+        ∇γ_UW += b[j]*( ∇ηd⋅JW[:,j] - F[:,j]⋅Hη(U[:,j],W[:,j]) )
     end
-    rγ = dt*rγ
-    Γ̃W = γ*dt*Γ̃W
-    ρ = Γ̃W + Γw
-    ρ = -ρ/rγ
+    ∂r_γ *= dt
+    ∇γ_UW *= γ*dt
+    ρ = -(∇γ_UW + ∇γ_uw)/∂r_γ
 
     dw = zeros(length(w))
-    for s=1:S
-        dw = @. dw + b[s]*( γ*JW[:,s] + ρ*F[:,s] )
+    for j=1:s
+        dw += b[j]*( γ*JW[:,j] + ρ*F[:,j] )
     end
     ϱ += ρ
     return (@. w + dt*dw, ϱ )
 end
 
-function RRK_update_adj(flds,ops,dt,rk::RKs)
+function RRK_update_adj(flds,ops,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
     z,u,γ,ζ = flds
     f,df,∇η,Hη = ops
-    S = rk.stages
-    b = rk.b
-    a = rk.a
 
     u1 = u[:,1]
     u2 = u[:,2]
@@ -174,85 +447,84 @@ function RRK_update_adj(flds,ops,dt,rk::RKs)
     U,F = RK_int(u1,f,dt,rk)
 
     ∇ηu2 = ∇η(u2)
-    Γ̃  = zeros(length(u1),S)
-    rγ = 0
+    ∇γ_U = zeros(length(u1),s)
+    ∂r_γ = 0
     ξ  = 0
-    for s=1:S
-        ∇ηd    = ∇ηu2-∇η(U[:,s])
-        Γ̃[:,s] = b[s].*( df(U[:,s],∇ηd;adj=true) - Hη(U[:,s],F[:,s];adj=true) )
-        rγ     = rγ + b[s]*( ∇ηd⋅F[:,s] )
-        ξ      = ξ  + b[s]*( F[:,s]⋅z )
+    for j=1:s
+        ∇ηd       = ∇ηu2-∇η(U[:,j])
+        ∇γ_U[:,j] = b[j].*( df(U[:,j],∇ηd;adj=true) - Hη(U[:,j],F[:,j];adj=true) )
+        ∂r_γ     += b[j]*( ∇ηd⋅F[:,j] )
+        ξ        += b[j]*( F[:,j]⋅z )
     end
-    rγ = dt*rγ
-    Γ̃  = -γ*dt/rγ .* Γ̃
-    Γ  = ( ∇η(u1)-∇ηu2 )./rγ
-    ξ  = dt*ξ - ζ
+    ∂r_γ *= dt
+    ∇γ_U *= -γ*dt/∂r_γ
+    ∇γ_u  = ( ∇η(u1)-∇ηu2 )./∂r_γ
+    ξ    *= dt
 
-    Z = df(U[:,S],z;adj=true)
-    Z = @. dt*γ*b[S]*Z + ξ*Γ̃[:,S]
-    dz = Z
-    for s=S-1:-1:1
-        Z = @. γ*b[s]*z + a[s]*Z
-        Z = df(U[:,s],Z;adj=true)
-        Z = @. dt*Z + ξ*Γ̃[:,s]
-        dz = @. dz + Z
+    #adjoint internal stages
+    Z = zeros(length(z),s)
+    Z[:,s] = dt*γ*b[s]*df(U[:,s],z;adj=true) + (ξ-ζ)*∇γ_U[:,s]
+    dz = Z[:,s]
+    for i=s-1:-1:1
+        for j=i+1:s
+            Z[:,i] += A[j,i]*Z[:,j]
+        end
+        Z[:,i] = γ*b[i]*z + Z[:,i]
+        Z[:,i] = df(U[:,i],Z[:,i];adj=true)
+        Z[:,i] = dt*Z[:,i] + (ξ-ζ)*∇γ_U[:,i]
+        dz += Z[:,i]
     end
-    return @. z + dz + ξ*Γ
+    return @. z + dz + (ξ-ζ)*∇γ_u
 end
 
-function RRK_update_lin_last(flds,ops,dt_corr,rk::RKs)
+function RRK_update_lin_last(flds,ops,dt_corr,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
     w,u,γ,ϱ,dt_old = flds
     f,df,∇η,Hη = ops
-    S = rk.stages
-    b = rk.b
-    a = rk.a
 
     u1 = u[:,1]
     u2 = u[:,2]
 
-    U = zeros(length(u1),S)
-    F = zeros(length(u1),S)
-    W = zeros(length(u1),S)
-    JW = zeros(length(u1),S)
+    U,F = RK_int(u1,f,dt_corr,rk)
 
-    U[:,1] = u1
-    F[:,1] = f(U[:,1])
+    W = zeros(length(w),s)
+    JW = zeros(length(w),s)
     W[:,1] = w
     JW[:,1] = df(U[:,1],W[:,1])
-    for s=2:S
-        U[:,s] = @. u1 + dt_corr*a[s-1]*F[:,s-1]
-        F[:,s] = f(U[:,s])
-        W[:,s] = @. w + dt_corr*a[s-1]*( JW[:,s-1] - dt_old/dt_corr*ϱ*F[:,s-1] )
-        JW[:,s] = df(U[:,s],W[:,s])
+    for i=2:s
+        for j=1:i-1
+            W[:,i] += A[i,j]*( JW[:,j] - dt_old/dt_corr*ϱ*F[:,j] )
+        end
+        W[:,i] = @. w + dt_corr*W[:,i]
+        JW[:,i] = df(U[:,i],W[:,i])
     end
 
     ∇ηu2 = ∇η(u2)
-    Γw = ( ∇ηu2 - ∇η(u1) )⋅w
-    Γ̃W = 0
-    rγ = 0
-    for s=1:S
-        ∇ηd = ∇ηu2-∇η(U[:,s])
-        rγ = rγ + b[s]*( ∇ηd⋅F[:,s] )
-        Γ̃W = Γ̃W + b[s]*( ∇ηd⋅JW[:,s] - F[:,s]⋅Hη(U[:,s],W[:,s]) )
+    ∇γ_uw = ( ∇ηu2 - ∇η(u1) )⋅w
+    ∇γ_UW = 0
+    ∂r_γ  = 0
+    for i=1:s
+        ∇ηd    = ∇ηu2-∇η(U[:,i])
+        ∂r_γ  += b[i]*( ∇ηd⋅F[:,i] )
+        ∇γ_UW += b[i]*( ∇ηd⋅JW[:,i] - F[:,i]⋅Hη(U[:,i],W[:,i]) )
     end
-    rγ = dt_corr*rγ
-    Γ̃W = γ*dt_corr*Γ̃W
-    ρ = Γ̃W + Γw
-    ρ = -ρ/rγ
+    ∂r_γ *= dt_corr
+    ∇γ_UW *= γ*dt_corr
+    ρ = -( ∇γ_UW + ∇γ_uw )/∂r_γ
 
     dw = zeros(length(w))
-    for s=1:S
-        dw = @. dw + b[s]*( γ*JW[:,s] + ρ*F[:,s] )
+    for i=1:s
+        dw += b[i]*( γ*JW[:,i] + ρ*F[:,i] )
     end
     return @. w + dt_corr*dw
 end
 
-function RRK_update_adj_last(flds,ops,dt_corr,rk::RKs)
+function RRK_update_adj_last(flds,ops,dt_corr,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
     z,u,γ,dt_old = flds
     f,df,∇η,Hη = ops
-    S = rk.stages
-    b = rk.b
-    a = rk.a
 
     u1 = u[:,1]
     u2 = u[:,2]
@@ -260,33 +532,42 @@ function RRK_update_adj_last(flds,ops,dt_corr,rk::RKs)
     U,F = RK_int(u1,f,dt_corr,rk)
 
     ∇ηu2 = ∇η(u2)
-    Γ̃  = zeros(length(u1),S)
-    rγ = 0
-    ξ  = 0
-    for s=1:S
-        ∇ηd    = ∇ηu2-∇η(U[:,s])
-        Γ̃[:,s] = b[s].*( df(U[:,s],∇ηd;adj=true) - Hη(U[:,s],F[:,s];adj=true) )
-        rγ     = rγ + b[s]*( ∇ηd⋅F[:,s] )
-        ξ      = ξ  + b[s]*( F[:,s]⋅z )
+    ∇γ_U = zeros(length(u1),s)
+    ∂r_γ = 0
+    ξ    = 0
+    for j=1:s
+        ∇ηd       = ∇ηu2-∇η(U[:,j])
+        ∇γ_U[:,j] = b[j].*( df(U[:,j],∇ηd;adj=true) - Hη(U[:,j],F[:,j];adj=true) )
+        ∂r_γ     += b[j]*( ∇ηd⋅F[:,j] )
+        ξ        += b[j]*( F[:,j]⋅z )
     end
-    rγ = dt_corr*rγ
-    Γ̃  = -γ*dt_corr/rγ .* Γ̃
-    Γ  = ( ∇η(u1)-∇ηu2 )./rγ
-    ξ  = dt_corr*ξ
+    ∂r_γ *= dt_corr
+    ∇γ_U *= -γ*dt_corr/∂r_γ
+    ∇γ_u  = ( ∇η(u1)-∇ηu2 )./∂r_γ
+    ξ    *= dt_corr
 
-    Z = df(U[:,S],z;adj=true)
-    Z = @. dt_corr*γ*b[S]*Z + ξ*Γ̃[:,S]
-    dz = Z
-    ζ = 0
-    for s=S-1:-1:1
-        ζ += a[s]*( F[:,s]⋅Z )
-        Z = @. γ*b[s]*z + a[s]*Z
-        Z = df(U[:,s],Z;adj=true)
-        Z = @. dt_corr*Z + ξ*Γ̃[:,s]
-        dz = @. dz + Z
+    Z = zeros(length(z),s)
+    Z[:,s] = dt_corr*γ*b[s]*df(U[:,s],z;adj=true) + ξ*∇γ_U[:,s]
+    dz = Z[:,s]
+    for i=s-1:-1:1
+        for j=i+1:s
+            Z[:,i] += A[j,i]*Z[:,j]
+        end
+        Z[:,i] = γ*b[i]*z + Z[:,i]
+        Z[:,i] = df(U[:,i],Z[:,i];adj=true)
+        Z[:,i] = dt_corr*Z[:,i] + ξ*∇γ_U[:,i]
+        dz += Z[:,i]
+    end
+
+    ζ  = 0
+    for j=2:s
+        for i=1:j-1
+            ζ += A[j,i]*( F[:,i]⋅Z[:,j] )
+        end
     end
     ζ *= dt_old
-    return (@. z + dz + ξ*Γ, ζ)
+
+    return (@. z + dz + ξ*∇γ_u, ζ)
 end
 
 ## IDT SOLVER
@@ -347,7 +628,7 @@ end
 #           Nt,     number of time steps
 #           t,      time grid points
 
-function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=false)
+function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk;lin=false,adj=false)
     if lin && ~(adj)
         IDT_lin!(arrks,ts,rk)
     elseif adj
@@ -357,7 +638,7 @@ function IDT_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=
     end
 end
 
-function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
@@ -390,7 +671,7 @@ function IDT_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     end
 end
 
-function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     @unpack dt,Nt = ts
     @unpack f,df = arrks
     @unpack u0_lin,u,γ = arrks
@@ -414,7 +695,7 @@ function IDT_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @pack! arrks = u_lin
 end
 
-function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     @unpack dt,Nt = ts
     @unpack f,df = arrks
     @unpack uT_adj,u,γ = arrks
@@ -467,7 +748,7 @@ end
 #   w,      lin=true
 #   z,      adj=true
 # ---------------------------------------#
-function RRK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=false)
+function RRK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk;lin=false,adj=false)
     if lin && ~(adj)
         RRK_lin!(arrks,ts,rk)
     elseif adj
@@ -477,7 +758,7 @@ function RRK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=
     end
 end
 
-function RRK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function RRK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
@@ -539,7 +820,7 @@ function RRK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     end
 end
 
-function RRK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function RRK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     @unpack dt,Nt,dt_corr = ts
     @unpack f,df = arrks
     @unpack u0_lin,u,γ = arrks
@@ -572,7 +853,7 @@ function RRK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @pack! arrks = u_lin
 end
 
-function RRK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function RRK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     @unpack dt,Nt,dt_corr = ts
     @unpack f,df = arrks
     @unpack uT_adj,u,γ = arrks

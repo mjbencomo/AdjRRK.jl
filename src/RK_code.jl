@@ -1,5 +1,4 @@
-# Algorithms for simple explicit RK methods.
-
+## Algorithms for simple explicit RK methods
 # function RK_update(u,f,dt,rk::RKs)
 #     U = u
 #     F = f(U)
@@ -12,25 +11,7 @@
 #     end
 #     return @. u + dt*du
 # end
-
-function RK_update(u,f,dt,rk::RK_struct)
-    @unpack b,A = rk
-    s = rk.stages
-
-    U = zeros(length(u),s)
-    U[:,1] = u
-    du = b[1].*f(U[:,1])
-
-    for i=2:s
-        for j=1:i-1
-            U[:,i] += A[i,j]*f(U[:,j])
-        end
-        U[:,i] = u + dt*U[:,i]
-        du += b[i]*f(U[:,i])
-    end
-    return @. u + dt*du
-end
-
+#
 # function RK_update_lin(flds,ops,dt,rk::RKs)
 #     w,u  = flds
 #     f,df = ops
@@ -47,11 +28,55 @@ end
 #     end
 #     return @. w + dt*dw
 # end
+#
+# function RK_update_adj(flds,ops,dt,rk::RKs)
+#     z,u  = flds
+#     f,df = ops
+#     a = rk.a
+#     b = rk.b
+#     S = rk.stages
+#
+#     # recomputing fwd internal stages
+#     U = zeros(length(u),S)
+#     U[:,1] = u
+#     for s=2:S
+#         U[:,s] =  u .+ dt.*a[s-1].*f(U[:,s-1])
+#     end
+#
+#     Z = df(U[:,S],z;adj=true)
+#     Z = @. dt*b[S]*Z
+#     dz = Z
+#     for s=S-1:-1:1
+#         Z = @. b[s]*z + a[s]*Z
+#         Z = df(U[:,s],Z;adj=true)
+#         Z = @. dt*Z
+#         dz = @. dz + Z
+#     end
+#     return @. z + dz
+# end
+
+
+## Algorithms of generic explicit RK methods
+function RK_update(u,f,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
+    U = zeros(length(u),s)
+    U[:,1] = u
+    du = b[1].*f(U[:,1])
+
+    for i=2:s
+        for j=1:i-1
+            U[:,i] += A[i,j]*f(U[:,j])
+        end
+        U[:,i] = u + dt*U[:,i]
+        du += b[i]*f(U[:,i])
+    end
+    return @. u + dt*du
+end
 
 function RK_update_lin(flds,ops,dt,rk::RK_struct)
     @unpack b,A = rk
     s = rk.stages
-
     w,u  = flds
     f,df = ops
 
@@ -79,36 +104,9 @@ function RK_update_lin(flds,ops,dt,rk::RK_struct)
     return @. w + dt*dw
 end
 
-# function RK_update_adj(flds,ops,dt,rk::RKs)
-#     z,u  = flds
-#     f,df = ops
-#     a = rk.a
-#     b = rk.b
-#     S = rk.stages
-#
-#     # recomputing fwd internal stages
-#     U = zeros(length(u),S)
-#     U[:,1] = u
-#     for s=2:S
-#         U[:,s] =  u .+ dt.*a[s-1].*f(U[:,s-1])
-#     end
-#
-#     Z = df(U[:,S],z;adj=true)
-#     Z = @. dt*b[S]*Z
-#     dz = Z
-#     for s=S-1:-1:1
-#         Z = @. b[s]*z + a[s]*Z
-#         Z = df(U[:,s],Z;adj=true)
-#         Z = @. dt*Z
-#         dz = @. dz + Z
-#     end
-#     return @. z + dz
-# end
-
 function RK_update_adj(flds,ops,dt,rk::RK_struct)
     @unpack b,A = rk
     s = rk.stages
-
     z,u  = flds
     f,df = ops
 
