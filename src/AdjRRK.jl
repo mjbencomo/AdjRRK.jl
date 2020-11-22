@@ -14,6 +14,12 @@ struct RKs
     a::Array{Float64,1}
 end
 
+struct RK_struct
+    stages::Int64
+    b::Array{Float64,1}
+    A::Array{Float64,2}
+end
+
 mutable struct Time_struct
     t0::Float64
     T::Float64
@@ -57,20 +63,25 @@ end
 s_rk2 = 2
 b_rk2 = [1/2,1/2]
 a_rk2 = [1]
-rk2 = RKs(s_rk2,b_rk2,a_rk2)
+# rk2 = RKs(s_rk2,b_rk2,a_rk2)
+A_rk2 = diagm(-1 => a_rk2)
+rk2 = RK_struct(s_rk2,b_rk2,A_rk2)
 
 # coefficients for classic RK4 method
 s_rk4 = 4
 b_rk4 = [1/6,1/3,1/3,1/6]
 a_rk4 = [1/2,1/2,1]
-rk4 = RKs(s_rk4,b_rk4,a_rk4)
+# rk4 = RKs(s_rk4,b_rk4,a_rk4)
+A_rk4 = diagm(-1 => a_rk4)
+rk4 = RK_struct(s_rk4,b_rk4,A_rk4)
+
 
 include("RK_code.jl")
 include("RRK_code.jl")
 include("test_code.jl")
 
 export RK_solver!, IDT_solver!, RRK_solver!
-export RKs, rk2, rk4
+export RKs, rk2, rk4, RK_struct
 export AdjRRK_struct, Time_struct, cp_ops
 
 end

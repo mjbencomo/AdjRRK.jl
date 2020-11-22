@@ -1,57 +1,138 @@
 # Algorithms for simple explicit RK methods.
 
-function RK_update(u,f,dt,rk::RKs)
-    U = u
-    F = f(U)
-    du = rk.b[1].*F
+# function RK_update(u,f,dt,rk::RKs)
+#     U = u
+#     F = f(U)
+#     du = rk.b[1].*F
+#
+#     for s=2:rk.stages
+#         U = @. u + dt*rk.a[s-1]*F
+#         F = f(U)
+#         du = @. du + rk.b[s]*F
+#     end
+#     return @. u + dt*du
+# end
 
-    for s=2:rk.stages
-        U = @. u + dt*rk.a[s-1]*F
-        F = f(U)
-        du = @. du + rk.b[s]*F
+function RK_update(u,f,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
+
+    U = zeros(length(u),s)
+    U[:,1] = u
+    du = b[1].*f(U[:,1])
+
+    for i=2:s
+        for j=1:i-1
+            U[:,i] += A[i,j]*f(U[:,j])
+        end
+        U[:,i] = u + dt*U[:,i]
+        du += b[i]*f(U[:,i])
     end
     return @. u + dt*du
 end
 
-function RK_update_lin(flds,ops,dt,rk::RKs)
+# function RK_update_lin(flds,ops,dt,rk::RKs)
+#     w,u  = flds
+#     f,df = ops
+#     W = w
+#     U = u
+#     JW = df(U,W)
+#     dw = rk.b[1].*JW
+#     for s=2:rk.stages
+#         W = @. w + dt*rk.a[s-1]*JW
+#         F = f(U)
+#         U = @. u + dt*rk.a[s-1]*F
+#         JW = df(U,W)
+#         dw = @. dw + rk.b[s]*JW
+#     end
+#     return @. w + dt*dw
+# end
+
+function RK_update_lin(flds,ops,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
+
     w,u  = flds
     f,df = ops
-    W = w
-    U = u
-    JW = df(U,W)
-    dw = rk.b[1].*JW
-    for s=2:rk.stages
-        W = @. w + dt*rk.a[s-1]*JW
-        F = f(U)
-        U = @. u + dt*rk.a[s-1]*F
-        JW = df(U,W)
-        dw = @. dw + rk.b[s]*JW
+
+    #recomputing internal fwd stages
+    U = zeros(length(u),s)
+    U[:,1] = u
+    for i=2:s
+        for j=1:i-1
+            U[:,i] += A[i,j]*f(U[:,j])
+        end
+        U[:,i] = u + dt*U[:,i]
+    end
+
+    #linear internal stages
+    W = zeros(length(u),s)
+    W[:,1] = w
+    dw = b[1].*df(U[:,1],W[:,1])
+    for i=2:s
+        for j=1:i-1
+            W[:,i] += A[i,j]*df(U[:,j],W[:,j])
+        end
+        W[:,i] = w + dt*W[:,i]
+        dw += b[i]*df(U[:,i],W[:,i])
     end
     return @. w + dt*dw
 end
 
-function RK_update_adj(flds,ops,dt,rk::RKs)
+# function RK_update_adj(flds,ops,dt,rk::RKs)
+#     z,u  = flds
+#     f,df = ops
+#     a = rk.a
+#     b = rk.b
+#     S = rk.stages
+#
+#     # recomputing fwd internal stages
+#     U = zeros(length(u),S)
+#     U[:,1] = u
+#     for s=2:S
+#         U[:,s] =  u .+ dt.*a[s-1].*f(U[:,s-1])
+#     end
+#
+#     Z = df(U[:,S],z;adj=true)
+#     Z = @. dt*b[S]*Z
+#     dz = Z
+#     for s=S-1:-1:1
+#         Z = @. b[s]*z + a[s]*Z
+#         Z = df(U[:,s],Z;adj=true)
+#         Z = @. dt*Z
+#         dz = @. dz + Z
+#     end
+#     return @. z + dz
+# end
+
+function RK_update_adj(flds,ops,dt,rk::RK_struct)
+    @unpack b,A = rk
+    s = rk.stages
+
     z,u  = flds
     f,df = ops
-    a = rk.a
-    b = rk.b
-    S = rk.stages
 
-    # recomputing fwd internal stages
-    U = zeros(length(u),S)
+    #recomputing fwd internal stages
+    U = zeros(length(u),s)
     U[:,1] = u
-    for s=2:S
-        U[:,s] =  u .+ dt.*a[s-1].*f(U[:,s-1])
+    for i=2:s
+        for j=1:i-1
+            U[:,i] += A[i,j]*f(U[:,j])
+        end
+        U[:,i] = u + dt*U[:,i]
     end
 
-    Z = df(U[:,S],z;adj=true)
-    Z = @. dt*b[S]*Z
-    dz = Z
-    for s=S-1:-1:1
-        Z = @. b[s]*z + a[s]*Z
-        Z = df(U[:,s],Z;adj=true)
-        Z = @. dt*Z
-        dz = @. dz + Z
+    #adjoint internal stages
+    Z = zeros(length(u),s)
+    Z[:,s] = dt*b[s]*df(U[:,s],z;adj=true)
+    dz = Z[:,s]
+    for i=s-1:-1:1
+        for j=i+1:s
+            Z[:,i] += A[j,i]*Z[:,j]
+        end
+        Z[:,i] = b[i]*z + Z[:,i]
+        Z[:,i] = dt*df(U[:,i],Z[:,i];adj=true)
+        dz += Z[:,i]
     end
     return @. z + dz
 end
@@ -105,7 +186,7 @@ end
 #           Nt,     number of time steps
 #           t,      time grid points (if return_time=true)
 
-function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=false)
+function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RK_struct;lin=false,adj=false)
     if lin && ~(adj)
         RK_lin!(arrks,ts,rk)
     elseif adj
@@ -115,7 +196,7 @@ function RK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs;lin=false,adj=f
     end
 end
 
-function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RK_struct)
     @unpack t0,T,dt = ts
     Nt = ceil(Int,(T-t0)/dt)+1
     dt = (T-t0)/(Nt-1)
@@ -147,7 +228,7 @@ function RK_fwd!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     end
 end
 
-function RK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function RK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RK_struct)
     @unpack dt,Nt = ts
     @unpack f,df = arrks
     @unpack u0_lin,u = arrks
@@ -162,7 +243,7 @@ function RK_lin!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
     @pack! arrks = u_lin
 end
 
-function RK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function RK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk::RK_struct)
     @unpack dt,Nt = ts
     @unpack f,df = arrks
     @unpack uT_adj,u = arrks

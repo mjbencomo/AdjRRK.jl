@@ -31,7 +31,7 @@ function derv_test!(solver!,arrks::AdjRRK_struct,arrks_h::AdjRRK_struct,ts::Time
 end
 
 # INNER PRODUCT TEST
-function ip_test!(solver!,arrks::AdjRRK_struct,ts::Time_struct,rk::RKs)
+function ip_test!(solver!,arrks::AdjRRK_struct,ts::Time_struct,rk)
     solver!(arrks,ts,rk)
 
     arrks.u0_lin = randn(length(arrks.u0))
