@@ -621,7 +621,12 @@ end
 
 ## Initializations
 
-A = [0 1; -1 0]
+N = 10
+A = randn(N,N)
+A = A - transpose(A)
+
+# A = [0 1; -1 0]
+
 function f(u)
     return A*u
 end
@@ -661,13 +666,15 @@ rk = dirk3
 
 #time axis
 ts = Time_struct()
+dt = 1/norm(A)
 t0  = 0
-T   = 10
-dt  = 0.1
+T   = norm(A)*10
+# T   = 10
 @pack! ts = t0,T,dt
 
 #inital conditions
-u0 = [2,1]
+# u0 = [2,1]
+u0 = randn(N)
 u0_lin = u0
 uT_adj = exp(A.*T)*u0
 @pack! arrks = u0,u0_lin,uT_adj
@@ -776,7 +783,7 @@ uT_adj = exp(A.*T)*u0
 
 
 ## refinement info
-dt0 = 0.1
+dt0 = 1/norm(A)
 Nref = 6
 dt = zeros(Nref+1)
 dt[1] = dt0
