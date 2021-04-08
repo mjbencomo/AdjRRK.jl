@@ -311,7 +311,7 @@ function RK_int_lin(flds,ops,dt,rk::RK_struct)
     return U,F,W,JW
 end
 
-function bisect(γL,γR,r;rtol=1e-12,γtol=1e-12,nmax=10000)
+function bisect(γL,γR,r;rtol=1e-14,γtol=1e-14,nmax=10000)
     γm = 0
     rm = 0
     for n=1:nmax

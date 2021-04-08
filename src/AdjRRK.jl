@@ -3,16 +3,16 @@ module AdjRRK
 using LinearAlgebra
 using UnPack
 
-ENT_TOL = 1e-13
-IPT_TOL = 1e-13
+ENT_TOL = 1e-12
+IPT_TOL = 1e-12
 DRV_TOL = 0.1
 CNV_TOL = 0.5
 
-struct RKs
-    stages::Int64
-    b::Array{Float64,1}
-    a::Array{Float64,1}
-end
+# struct RKs
+#     stages::Int64
+#     b::Array{Float64,1}
+#     a::Array{Float64,1}
+# end
 
 struct RK_struct
     stages::Int64
