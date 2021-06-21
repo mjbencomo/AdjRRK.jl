@@ -2,6 +2,9 @@ using Plots
 using UnPack
 using LinearAlgebra
 using SparseArrays
+using Random
+using LaTeXStrings
+
 
 using ForwardDiff
 using StaticArrays
@@ -20,9 +23,15 @@ using AdjRRK
 
 N = 3
 K1D = 16
-CFL = .25
-T = 0.25
+CFL = 1.5 #1 #1.5
+T = 1.5 #0.25
 Nfields = 3
+
+s = 1
+b = [1]
+A = diagm([0])
+rk_FE = RK_struct(s,b,A)
+rk = rk4
 
 ################################################################################
 ## Initial DG stuff
@@ -326,7 +335,7 @@ end
 
 #time stuff
 CN = (N+1)^2/2  # estimated trace constant
-dt = CFL * 2 / (CN*K1D)
+dt = CFL / (CN*K1D)
 t0 = 0
 
 Q0 = vec.(Q0)
@@ -348,26 +357,26 @@ arrks_RK.return_time = true
 arrks_RK.return_Δη = true
 
 #running forward solver
-RK_solver!(arrks_RK,ts_RK,rk4)
+RK_solver!(arrks_RK,ts_RK,rk)
 Q_RK = arr_to_tuple(arrks_RK.u[:,end])
 Q_RK = (x->reshape(x,length(rd.r),md.K)).(Q_RK)
 # gr(aspect_ratio=1,legend=false)
-display(scatter((x->rd.Vp*x).((x,Q_RK[1])),zcolor=rd.Vp*Q_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
-display(plot(ts_RK.t,arrks_RK.Δη,legend=false))
+display(scatter((x->rd.Vp*x).((x,Q_RK[1])),zcolor=rd.Vp*Q_RK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RK solution"))
+display(plot(ts_RK.t,arrks_RK.Δη,legend=false,title="RK Δη"))
 
 #running linearized solver
 arrks_RK.u0_lin = u0
-RK_solver!(arrks_RK,ts_RK,rk4;lin=true)
+RK_solver!(arrks_RK,ts_RK,rk;lin=true)
 W_RK = arr_to_tuple(arrks_RK.u_lin[:,end])
 W_RK = (x->reshape(x,length(rd.r),md.K)).(W_RK)
-display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false))
+display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RK lin solution"))
 
 #running adjoint solver
 arrks_RK.uT_adj = arrks_RK.u[:,end]
-RK_solver!(arrks_RK,ts_RK,rk4;adj=true)
+RK_solver!(arrks_RK,ts_RK,rk;adj=true)
 Z_RK = arr_to_tuple(arrks_RK.u_adj[:,1])
 Z_RK = (x->reshape(x,length(rd.r),md.K)).(Z_RK)
-display(scatter((x->rd.Vp*x).((x,Z_RK[3])),zcolor=rd.Vp*Z_RK[3],msw=0,ms=2,cam=(0,90),legend=false))
+display(scatter((x->rd.Vp*x).((x,Z_RK[1])),zcolor=rd.Vp*Z_RK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RK adj solution"))
 
 
 # #running deriv test on lin RK
@@ -378,11 +387,11 @@ display(scatter((x->rd.Vp*x).((x,Z_RK[3])),zcolor=rd.Vp*Z_RK[3],msw=0,ms=2,cam=(
 # h0 = 2^(-6)
 # arrks_h = AdjRRK_struct(arrks_RK)
 # @pack! arrks_h = f,df
-# errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks_RK,arrks_h,ts_RK,rk4,h0,Nref)
+# errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks_RK,arrks_h,ts_RK,rk,h0,Nref)
 # @show rate
 #
 # #inner product test
-# ipt = AdjRRK.ip_test!(RK_solver!,arrks_RK,ts_RK,rk4)
+# ipt = AdjRRK.ip_test!(RK_solver!,arrks_RK,ts_RK,rk)
 
 
 ## RRK example
@@ -399,23 +408,67 @@ arrks_RRK.return_time = true
 arrks_RRK.return_Δη = true
 
 #running forward solver
-RRK_solver!(arrks_RRK,ts_RRK,rk4)
+RRK_solver!(arrks_RRK,ts_RRK,rk)
 Q_RRK = arr_to_tuple(arrks_RRK.u[:,end])
 Q_RRK = (x->reshape(x,length(rd.r),md.K)).(Q_RRK)
-display(scatter((x->rd.Vp*x).((x,Q_RRK[1])),zcolor=rd.Vp*Q_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
-display(plot(ts_RRK.t,arrks_RRK.Δη,legend=false))
-display(plot(ts_RRK.t,arrks_RRK.γ,legend=false))
+display(scatter((x->rd.Vp*x).((x,Q_RRK[1])),zcolor=rd.Vp*Q_RRK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RRK solution"))
+display(plot(ts_RRK.t,arrks_RRK.Δη,legend=false,title="RRK Δη"))
+display(plot(ts_RRK.t,arrks_RRK.γ,legend=false,title="RRK γ"))
 
 arrks_RRK.uT_adj = arrks_RRK.u[:,end]
 
 #running linearized solver
-RRK_solver!(arrks_RRK,ts_RRK,rk4;lin=true)
+RRK_solver!(arrks_RRK,ts_RRK,rk;lin=true)
 W_RRK = arr_to_tuple(arrks_RRK.u_lin[:,end])
 W_RRK = (x->reshape(x,length(rd.r),md.K)).(W_RRK)
-display(scatter((x->rd.Vp*x).((x,W_RRK[1])),zcolor=rd.Vp*W_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
+display(scatter((x->rd.Vp*x).((x,W_RRK[1])),zcolor=rd.Vp*W_RRK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RRK lin solution"))
 
 #running adjoint solver
-RRK_solver!(arrks_RRK,ts_RRK,rk4;adj=true)
+RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
 Z_RRK = arr_to_tuple(arrks_RRK.u_adj[:,1])
 Z_RRK = (x->reshape(x,length(rd.r),md.K)).(Z_RRK)
-display(scatter((x->rd.Vp*x).((x,Z_RRK[1])),zcolor=rd.Vp*Z_RRK[1],msw=0,ms=2,cam=(0,90),legend=false))
+display(scatter((x->rd.Vp*x).((x,Z_RRK[1])),zcolor=rd.Vp*Z_RRK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RRK adj solution"))
+
+
+##derivative tests
+
+Nref = 5
+h0 = 2^(-12)
+
+arrks_h = AdjRRK_struct()
+@pack! arrks_h = f,df,η,∇η,Hη
+
+##RRK
+Random.seed!(05052021)
+arrks_RRK.u0_lin = randn(size(u0))
+
+# assuming γ is cnst in linearization
+arrks_RRK.γ_cnst = true
+arrks_RRK.dt_cnst = true
+errs_RRKγ0,rate_RRKγ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+# with proper linearization, but const dt
+arrks_RRK.γ_cnst = false
+arrks_RRK.dt_cnst = true
+errs_RRKdt0,rate_RRKdt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+# with proper linearization
+arrks_RRK.γ_cnst = false
+arrks_RRK.dt_cnst = false
+errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+
+#plots
+labels = ["γ constant" "Δt* constant" "proper lin."]
+markers = [:circle :square :star5]
+
+errors = [errs_RRKγ0,errs_RRKdt0,errs_RRK]
+plot(title="linearization error",
+    h,errors,
+    xlabel=L"h",
+    ylabel="error",
+    label=labels,
+    marker=markers,
+    xaxis=:log,
+    yaxis=:log)
+display(plot!())

@@ -7,11 +7,14 @@ using AdjRRK
 using LinearAlgebra
 using Plots
 using UnPack
+using LaTeXStrings
+using Random
 
 rk = rk4
 arrks = AdjRRK_struct()
 
 N = 10
+Random.seed!(1234)
 A = randn(N,N)
 A = A - transpose(A)
 
@@ -42,6 +45,7 @@ t0  = 0
 T   = norm(A)*10
 @pack! ts = t0,T
 
+Random.seed!(12345)
 u0 = randn(N)
 u0_lin = u0
 uT_adj = exp(A.*T)*u0
@@ -233,14 +237,13 @@ display(plot!())
 
 ## Time reversal results
 
-# The following results demonstrate the time reversibility of RRK and IDT as well
+# The following results demonstrate the time reversibility of RRK as well
 # as the super convergence behavior of adjoint RK4.
 
-err_RK    = zeros(Nref+1)
-err_IDTγ0 = zeros(Nref+1)
-err_IDT   = zeros(Nref+1)
-err_RRKγ0 = zeros(Nref+1)
-err_RRK   = zeros(Nref+1)
+err_RK     = zeros(Nref+1)
+err_RRKγ0  = zeros(Nref+1)
+err_RRKΔt0 = zeros(Nref+1)
+err_RRK    = zeros(Nref+1)
 
 for n=1:Nref+1
     ts.dt = dt[n]
@@ -254,21 +257,6 @@ for n=1:Nref+1
     @unpack u_adj = arrks
     err_RK[n] = norm(u_adj[:,1] - u0)
 
-    #IDT
-    IDT_solver!(arrks,ts,rk)
-    @unpack u = arrks
-    arrks.uT_adj = u[:,end]
-
-    arrks.γ_cnst = true
-    IDT_solver!(arrks,ts,rk;adj=true)
-    @unpack u_adj = arrks
-    err_IDTγ0[n] = norm(u_adj[:,1] - u0)
-
-    arrks.γ_cnst = false
-    IDT_solver!(arrks,ts,rk;adj=true)
-    @unpack u_adj = arrks
-    err_IDT[n] = norm(u_adj[:,1] - u0)
-
     #RRK
     RRK_solver!(arrks,ts,rk)
     @unpack u = arrks
@@ -280,34 +268,52 @@ for n=1:Nref+1
     err_RRKγ0[n] = norm(u_adj[:,1] - u0)
 
     arrks.γ_cnst = false
+    arrks.dt_cnst = true
+    RRK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_RRKΔt0[n] = norm(u_adj[:,1] - u0)
+
+    arrks.γ_cnst = false
+    arrks.dt_cnst = false
     RRK_solver!(arrks,ts,rk;adj=true)
     @unpack u_adj = arrks
     err_RRK[n] = norm(u_adj[:,1] - u0)
 end
 
-rates_RK    = comp_rates(err_RK)
-rates_IDTγ0 = comp_rates(err_IDTγ0)
-rates_IDT   = comp_rates(err_IDT)
-rates_RRKγ0 = comp_rates(err_RRKγ0)
-rates_RRK   = comp_rates(err_RRK)
+rates_RK     = comp_rates(err_RK)
+rates_RRKγ0  = comp_rates(err_RRKγ0)
+rates_RRKΔt0 = comp_rates(err_RRKΔt0)
+rates_RRK    = comp_rates(err_RRK)
 
-plot(dt,[err_RK,err_IDTγ0,err_IDT,err_RRKγ0,err_RRK],
-    title="Adjoint convergence plot",
+# plot(dt,[err_RK,err_IDTγ0,err_IDT,err_RRKγ0,err_RRK],
+#     title="Adjoint convergence plot",
+#     xaxis=:log,
+#     yaxis=:log,
+#     label=labels,
+#     marker=markers,
+#     linestyle=linestyles,
+#     xlabel="\Delta t",
+#     ylabel="Error at t=$T")
+# display(plot!())
+
+labels = ["RK" "RRK (γ-const)" "RRK (Δt-const)" "RRK"]
+markers = [:circle :square :square :star]
+plot(dt,[err_RK,err_RRKγ0,err_RRKΔt0,err_RRK],
     xaxis=:log,
     yaxis=:log,
     label=labels,
     marker=markers,
-    linestyle=linestyles,
-    xlabel="dt",
+    xlabel=L"\Delta t",
     ylabel="Error at t=$T")
 display(plot!())
+# savefig("RK_time_reverse.pdf")
 
-plot([rates_RK,rates_IDTγ0,rates_IDT,rates_RRKγ0,rates_RRK],
-    label=labels,
-    marker=markers,
-    linestyle=linestyles,
-    xaxis=:flip,
-    title="Adjoint convergence slopes/rates",
-    ylabel="Rates/slopes",
-    xlabel="refinement index")
-display(plot!())
+# plot([rates_RK,rates_IDTγ0,rates_IDT,rates_RRKγ0,rates_RRK],
+#     label=labels,
+#     marker=markers,
+#     linestyle=linestyles,
+#     xaxis=:flip,
+#     title="Adjoint convergence slopes/rates",
+#     ylabel="Rates/slopes",
+#     xlabel="refinement index")
+# display(plot!())

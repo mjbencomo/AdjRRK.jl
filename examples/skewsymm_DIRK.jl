@@ -4,6 +4,8 @@ using AdjRRK
 using LinearAlgebra
 using Plots
 using UnPack
+using LaTeXStrings
+using Random
 
 ##DIRK functions
 
@@ -622,6 +624,7 @@ end
 ## Initializations
 
 N = 10
+Random.seed!(1234)
 A = randn(N,N)
 A = A - transpose(A)
 
@@ -674,6 +677,7 @@ T   = norm(A)*10
 
 #inital conditions
 # u0 = [2,1]
+Random.seed!(12345)
 u0 = randn(N)
 u0_lin = u0
 uT_adj = exp(A.*T)*u0
@@ -921,8 +925,10 @@ display(plot!())
 ## Time reversal results
 # The following results demonstrate the time reversibility of DIRRK.
 
-err_RK    = zeros(Nref+1)
-err_RRK   = zeros(Nref+1)
+err_RK     = zeros(Nref+1)
+err_RRK    = zeros(Nref+1)
+err_RRKγ0  = zeros(Nref+1)
+err_RRKdt0 = zeros(Nref+1)
 
 for n=1:Nref+1
     ts.dt = dt[n]
@@ -931,6 +937,7 @@ for n=1:Nref+1
     DIRK_solver!(arrks,ts,rk)
     @unpack u = arrks
     arrks.uT_adj = u[:,end]
+
     DIRK_solver!(arrks,ts,rk;adj=true)
     @unpack u_adj = arrks
     err_RK[n] = norm(u_adj[:,1] - u0)
@@ -939,31 +946,48 @@ for n=1:Nref+1
     DIRRK_solver!(arrks,ts,rk)
     @unpack u = arrks
     arrks.uT_adj = u[:,end]
+
+    arrks.γ_cnst = true
+    arrks.dt_cnst = true
+    DIRRK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_RRKγ0[n] = norm(u_adj[:,1] - u0)
+
     arrks.γ_cnst = false
+    arrks.dt_cnst = true
+    DIRRK_solver!(arrks,ts,rk;adj=true)
+    @unpack u_adj = arrks
+    err_RRKdt0[n] = norm(u_adj[:,1] - u0)
+
+    arrks.γ_cnst = false
+    arrks.dt_cnst = false
     DIRRK_solver!(arrks,ts,rk;adj=true)
     @unpack u_adj = arrks
     err_RRK[n] = norm(u_adj[:,1] - u0)
 end
 
-rates_RK    = comp_rates(err_RK)
-rates_RRK   = comp_rates(err_RRK)
+rates_RK     = comp_rates(err_RK)
+rates_RRK    = comp_rates(err_RRK)
+rates_RRKγ0  = comp_rates(err_RRKγ0)
+rates_RRKdt0 = comp_rates(err_RRKdt0)
 
-labels = ["RK" "RRK"]
-markers = [:circle :star]
-linestyles = [:solid :dash]
+labels = ["DIRK" "DIRRK(γ-const)" "DIRRK(Δt*-const)" "DIRRK"]
+markers = [:circle :square :square :star]
+linestyles = [:dash :dash :dash :dash]
 
-plot(dt,[err_RK,err_RRK],
-    title="Adjoint convergence plot",
+plot(dt,[err_RK,err_RRKγ0,err_RRKdt0,err_RRK],
     xaxis=:log,
     yaxis=:log,
     label=labels,
+    legend=:topleft,
     marker=markers,
     linestyle=linestyles,
-    xlabel="dt",
+    xlabel=L"\Delta t",
     ylabel="Error at t=$T")
 display(plot!())
+# savefig("DIRK_time_reverse.pdf")
 
-plot([rates_RK,rates_RRK],
+plot([rates_RK,rates_RRKγ0,rates_RRKdt0,rates_RRK],
     label=labels,
     marker=markers,
     linestyle=linestyles,
