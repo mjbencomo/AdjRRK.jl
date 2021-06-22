@@ -90,6 +90,9 @@ RK_solver!(arrks_RK,ts_RK,rk4;adj=true)
 u_true = arrks_RK.u
 z_true = arrks_RK.u_adj
 
+norm_u = norm(u_true[:,end])
+norm_z = norm(z_true[:,1])
+
 
 ## Convergence for RK2
 rk = rk2
@@ -107,35 +110,35 @@ for n=1:Nref+1
 
     #fwd RK
     RK_solver!(arrks_RK,ts_RK,rk)
-    errs_fwd_RK2[n] = norm(arrks_RK.u[:,end]-u_true[:,end])
+    errs_fwd_RK2[n] = norm(arrks_RK.u[:,end]-u_true[:,end])/norm_u
 
     #adj RK
     arrks_RK.uT_adj = arrks_RK.u[:,end]
     RK_solver!(arrks_RK,ts_RK,rk;adj=true)
-    errs_adj_RK2[n] = norm(arrks_RK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RK2[n] = norm(arrks_RK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #fwd RRK
     RRK_solver!(arrks_RRK,ts_RRK,rk)
-    errs_fwd_RRK2[n] = norm(arrks_RRK.u[:,end]-u_true[:,end])
+    errs_fwd_RRK2[n] = norm(arrks_RRK.u[:,end]-u_true[:,end])/norm_u
 
     #adj RRK
     arrks_RRK.uT_adj = arrks_RRK.u[:,end]
     arrks_RRK.dt_cnst = false
     arrks_RRK.γ_cnst  = false
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK2[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK2[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #adj RRK dt*-const
     arrks_RRK.dt_cnst = true
     arrks_RRK.γ_cnst  = false
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK2_dt0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK2_dt0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #adj RRK γ-const
     arrks_RRK.dt_cnst = true
     arrks_RRK.γ_cnst  = true
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK2_g0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK2_g0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 end
 
 
@@ -223,35 +226,35 @@ for n=1:Nref+1
 
     #fwd RK
     RK_solver!(arrks_RK,ts_RK,rk)
-    errs_fwd_RK3[n] = norm(arrks_RK.u[:,end]-u_true[:,end])
+    errs_fwd_RK3[n] = norm(arrks_RK.u[:,end]-u_true[:,end])/norm_u
 
     #adj RK
     arrks_RK.uT_adj = arrks_RK.u[:,end]
     RK_solver!(arrks_RK,ts_RK,rk;adj=true)
-    errs_adj_RK3[n] = norm(arrks_RK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RK3[n] = norm(arrks_RK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #fwd RRK
     RRK_solver!(arrks_RRK,ts_RRK,rk)
-    errs_fwd_RRK3[n] = norm(arrks_RRK.u[:,end]-u_true[:,end])
+    errs_fwd_RRK3[n] = norm(arrks_RRK.u[:,end]-u_true[:,end])/norm_u
 
     #adj RRK
     arrks_RRK.uT_adj = arrks_RRK.u[:,end]
     arrks_RRK.dt_cnst = false
     arrks_RRK.γ_cnst  = false
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK3[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK3[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #adj RRK dt*-const
     arrks_RRK.dt_cnst = true
     arrks_RRK.γ_cnst  = false
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK3_dt0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK3_dt0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #adj RRK γ-const
     arrks_RRK.dt_cnst = true
     arrks_RRK.γ_cnst  = true
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK3_g0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK3_g0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 end
 
 
@@ -339,35 +342,35 @@ for n=1:Nref+1
 
     #fwd RK
     RK_solver!(arrks_RK,ts_RK,rk)
-    errs_fwd_RK4[n] = norm(arrks_RK.u[:,end]-u_true[:,end])
+    errs_fwd_RK4[n] = norm(arrks_RK.u[:,end]-u_true[:,end])/norm_u
 
     #adj RK
     arrks_RK.uT_adj = arrks_RK.u[:,end]
     RK_solver!(arrks_RK,ts_RK,rk;adj=true)
-    errs_adj_RK4[n] = norm(arrks_RK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RK4[n] = norm(arrks_RK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #fwd RRK
     RRK_solver!(arrks_RRK,ts_RRK,rk)
-    errs_fwd_RRK4[n] = norm(arrks_RRK.u[:,end]-u_true[:,end])
+    errs_fwd_RRK4[n] = norm(arrks_RRK.u[:,end]-u_true[:,end])/norm_u
 
     #adj RRK
     arrks_RRK.uT_adj = arrks_RRK.u[:,end]
     arrks_RRK.dt_cnst = false
     arrks_RRK.γ_cnst  = false
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK4[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK4[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #adj RRK dt*-const
     arrks_RRK.dt_cnst = true
     arrks_RRK.γ_cnst  = false
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK4_dt0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK4_dt0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 
     #adj RRK γ-const
     arrks_RRK.dt_cnst = true
     arrks_RRK.γ_cnst  = true
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    errs_adj_RRK4_g0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])
+    errs_adj_RRK4_g0[n] = norm(arrks_RRK.u_adj[:,1]-z_true[:,1])/norm_z
 end
 
 
