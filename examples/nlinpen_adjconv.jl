@@ -44,11 +44,11 @@ function Hη(u,δu;adj=false)
     return H*δu
 end
 
-#specifying 3rd order RK
-s_rk = 3
-A_rk = [0 0 0; 1 0 0; 1/4 1/4 0]
-b_rk = [1/6; 1/6; 2/3]
-rk3 = RK_struct(s_rk,b_rk,A_rk)
+write_mat = true
+
+if write_mat
+    file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK paper/figs/RRK_nlpen_conv.mat","w")
+end
 
 t0 = 0
 T  = 2 #500
@@ -73,12 +73,11 @@ arrks_RRK = AdjRRK_struct()
 ts_RRK = Time_struct()
 @pack! ts_RRK = t0,T
 
-
-file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK paper/figs/RRK_adj_conv.mat","w")
-write(file,"dt",dt)
-write(file,"T",T)
-write(file,"dt_small",dt_small)
-
+if write_mat
+    write(file,"dt",dt)
+    write(file,"T",T)
+    write(file,"dt_small",dt_small)
+end
 
 ## computing "true" solution by RK with small dt
 ts_RK.dt = dt_small
@@ -201,14 +200,14 @@ plot([rate_adj_RK2,rate_adj_RRK2,rate_adj_RRK2_g0,rate_adj_RRK2_dt0],
     legend=:bottomright)
 display(plot!())
 
-
-write(file,"errs_fwd_RK2",errs_fwd_RK2)
-write(file,"errs_fwd_RRK2",errs_fwd_RRK2)
-write(file,"errs_adj_RK2",errs_adj_RK2)
-write(file,"errs_adj_RRK2",errs_adj_RRK2)
-write(file,"errs_adj_RRK2_dt0",errs_adj_RRK2_dt0)
-write(file,"errs_adj_RRK2_g0",errs_adj_RRK2_g0)
-
+if write_mat
+    write(file,"errs_fwd_RK2",errs_fwd_RK2)
+    write(file,"errs_fwd_RRK2",errs_fwd_RRK2)
+    write(file,"errs_adj_RK2",errs_adj_RK2)
+    write(file,"errs_adj_RRK2",errs_adj_RRK2)
+    write(file,"errs_adj_RRK2_dt0",errs_adj_RRK2_dt0)
+    write(file,"errs_adj_RRK2_g0",errs_adj_RRK2_g0)
+end
 
 ## Convergence for RK3
 rk = rk3
@@ -317,14 +316,14 @@ plot([rate_adj_RK3,rate_adj_RRK3,rate_adj_RRK3_g0,rate_adj_RRK3_dt0],
     legend=:bottomright)
 display(plot!())
 
-
-write(file,"errs_fwd_RK3",errs_fwd_RK3)
-write(file,"errs_fwd_RRK3",errs_fwd_RRK3)
-write(file,"errs_adj_RK3",errs_adj_RK3)
-write(file,"errs_adj_RRK3",errs_adj_RRK3)
-write(file,"errs_adj_RRK3_dt0",errs_adj_RRK3_dt0)
-write(file,"errs_adj_RRK3_g0",errs_adj_RRK3_g0)
-
+if write_mat
+    write(file,"errs_fwd_RK3",errs_fwd_RK3)
+    write(file,"errs_fwd_RRK3",errs_fwd_RRK3)
+    write(file,"errs_adj_RK3",errs_adj_RK3)
+    write(file,"errs_adj_RRK3",errs_adj_RRK3)
+    write(file,"errs_adj_RRK3_dt0",errs_adj_RRK3_dt0)
+    write(file,"errs_adj_RRK3_g0",errs_adj_RRK3_g0)
+end
 
 ## Convergence for RK4
 rk = rk4
@@ -433,13 +432,12 @@ plot([rate_adj_RK4,rate_adj_RRK4,rate_adj_RRK4_g0,rate_adj_RRK4_dt0],
     legend=:bottomright)
 display(plot!())
 
-
-write(file,"errs_fwd_RK4",errs_fwd_RK4)
-write(file,"errs_fwd_RRK4",errs_fwd_RRK4)
-write(file,"errs_adj_RK4",errs_adj_RK4)
-write(file,"errs_adj_RRK4",errs_adj_RRK4)
-write(file,"errs_adj_RRK4_dt0",errs_adj_RRK4_dt0)
-write(file,"errs_adj_RRK4_g0",errs_adj_RRK4_g0)
-
-
-close(file)
+if write_mat
+    write(file,"errs_fwd_RK4",errs_fwd_RK4)
+    write(file,"errs_fwd_RRK4",errs_fwd_RRK4)
+    write(file,"errs_adj_RK4",errs_adj_RK4)
+    write(file,"errs_adj_RRK4",errs_adj_RRK4)
+    write(file,"errs_adj_RRK4_dt0",errs_adj_RRK4_dt0)
+    write(file,"errs_adj_RRK4_g0",errs_adj_RRK4_g0)
+    close(file)
+end

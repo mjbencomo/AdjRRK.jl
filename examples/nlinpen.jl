@@ -1,9 +1,10 @@
 # This code runs some numerical experiments and generates .mat files for adjoint
-# RRK paper. In particular, we run two experiments for a simple nonlinear
+# RRK paper. In particular, we run several experiments for a simple nonlinear
 # pendulum problem (Ranocha 2019):
-#   1. Growth of adjoint solution using RRK w/ & w/o proper linearization.
-#   2. Derivative tests for verifying linearization of RRK and quantifying
+#   1. Derivative tests for verifying linearization of RRK and quantifying
 #      errors from improper linearization.
+#   2. Convergence experiment of discrete adjoint.
+#   3. Accuracy experiment of discrete adjoint.
 
 using AdjRRK
 using LinearAlgebra
@@ -43,28 +44,64 @@ function Hη(u,δu;adj=false)
     return H*δu
 end
 
+
+function adj_conv_test!(solver!,arrks::AdjRRK_struct,ts::Time_struct,rk::RK_struct,dt0,Nref,true_sol,fwd_flag)
+    dt = zeros(Nref+1)
+    dt[1] = dt0
+    for n=1:Nref
+        dt[n+1] = dt[n]/2
+    end
+
+    norm_true_sol = norm(true_sol)
+
+    errs = zeros(Nref+1)
+    for n=1:Nref+1
+        ts.dt  = dt[n]
+        solver!(arrks,ts,rk)
+
+        if !fwd_flag
+            arrks.uT_adj = arrks.u[:,end]
+            solver!(arrks,ts,rk;adj=true)
+        end
+
+        if fwd_flag
+            errs[n] = norm(arrks.u[:,end]-true_sol)/norm_true_sol
+        else
+            errs[n] = norm(arrks.u_adj[:,1]-true_sol)/norm_true_sol
+        end
+    end
+
+    rate = zeros(Nref)
+    for n=1:Nref
+        rate[n]  = log2(errs[n]) - log2(errs[n+1])
+    end
+
+    return errs, rate, dt
+end
+
+
 # Flags
-write_mat = true  # Want to output .mat files?
-run_adj_growth = true # Want to run adjoint growth test?
-run_derv_test = true # Want to run derivative tests?
+write_mat = true  # Want to output .mat file?
 make_plot = false # Want to output plots?
+
+run_derv_test  = false # Want to run derivative tests?
+run_adj_conv   = false # Want to run adjoint convergence tests?
+run_adj_growth = true # Want to run adjoint growth tests?
 
 if write_mat
     file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK paper/figs/RRK_nlpen.mat","w")
 end
 
+# Initial time and initial condition
 t0 = 0
 u0 = [1.5,1]
 
+# Initializing RRK and time axis structs
 arrks_RK = AdjRRK_struct()
 @pack! arrks_RK = f,df,η,∇η,Hη
 @pack! arrks_RK = u0
 arrks_RK.return_time = true
 arrks_RK.return_Δη = true
-
-ts_RK = Time_struct()
-@pack! ts_RK = t0
-
 
 arrks_RRK = AdjRRK_struct()
 @pack! arrks_RRK = f,df,η,∇η,Hη
@@ -72,23 +109,510 @@ arrks_RRK = AdjRRK_struct()
 arrks_RRK.return_time = true
 arrks_RRK.return_Δη = true
 
+arrks_h = AdjRRK_struct()
+@pack! arrks_h = f,df,η,∇η,Hη
+
+ts_RK = Time_struct()
+@pack! ts_RK = t0
 ts_RRK = Time_struct()
 @pack! ts_RRK = t0
 
 
+#==============================================================================#
+# 1. Derivative test: checking that a first order FD approximation to
+#    directional derivative converges appropriately.
+
+if run_derv_test
+    print("\nRunning derivative tests .... ")
+
+    ts_RK.T  = 200
+    ts_RRK.T = 200
+
+    dt_RK4 = 0.1#0.9
+    dt_RK3 = 0.1#0.65
+    dt_RK2 = 0.1#0.4
+
+    Nref = 5
+    h0 = 2^(-12)
+
+    arrks_h = AdjRRK_struct()
+    @pack! arrks_h = f,df,η,∇η,Hη
+
+    Random.seed!(123)
+    arrks_RRK.u0_lin = randn(2)
+
+
+    # RK4 case ----------------------------------------------------------------#
+    rk = rk4
+    ts_RRK.dt = dt_RK4
+
+    # with proper linearization
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = false
+    errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    # γ-const case
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    # dt*-const case
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    if make_plot
+        labels = ["proper lin." "Δt* constant" "γ constant"]
+        markers = [:circle :square :star5]
+
+        errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
+        plot(title="FD error (RRK4)",
+            h,errors,
+            xlabel=L"h",
+            ylabel="error",
+            label=labels,
+            marker=markers,
+            xaxis=:log,
+            yaxis=:log)
+        display(plot!())
+
+        # rates = [rate_RRK,rate_RRK_dt0,rate_RRK_γ0]
+        # plot(rates,
+        #     title="FD convergence rate (RRK4)",
+        #     xlabel="refinement index",
+        #     ylabel="rate",
+        #     label=labels,
+        #     marker=markers,
+        #     xaxis=:flip)
+        # display(plot!())
+    end
+
+    if write_mat
+        write(file,"errs_RRK4",errs_RRK)
+        write(file,"errs_RRK4_dt0",errs_RRK_dt0)
+        write(file,"errs_RRK4_g0",errs_RRK_γ0)
+    end
+
+
+    # RK3 case ----------------------------------------------------------------#
+    rk = rk3
+    ts_RRK.dt = dt_RK3
+
+    # with proper linearization
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = false
+    errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    # dt*-const case
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    # γ-const case
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    if make_plot
+        labels = ["proper lin." "Δt* constant" "γ constant"]
+        markers = [:circle :square :star5]
+
+        errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
+        plot(title="FD error (RK3)",
+            h,errors,
+            xlabel=L"h",
+            ylabel="error",
+            label=labels,
+            marker=markers,
+            xaxis=:log,
+            yaxis=:log)
+        display(plot!())
+
+        # rates = [rate_RRK,rate_RRK_dt0,rate_RRK_γ0]
+        # plot(rates,
+        #     title="FD convergence rate (RRK3)",
+        #     xlabel="refinement index",
+        #     ylabel="rate",
+        #     label=labels,
+        #     marker=markers,
+        #     xaxis=:flip)
+        # display(plot!())
+    end
+
+    if write_mat
+        write(file,"errs_RRK3",errs_RRK)
+        write(file,"errs_RRK3_dt0",errs_RRK_dt0)
+        write(file,"errs_RRK3_g0",errs_RRK_γ0)
+    end
+
+
+    # RK2 case ----------------------------------------------------------------#
+    rk = rk2
+    ts_RRK.dt = dt_RK2
+
+    # with proper linearization
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = false
+    errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    # dt*-const case
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    # γ-const case
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
+    if make_plot
+        labels = ["proper lin." "Δt* constant" "γ constant"]
+        markers = [:circle :square :star5]
+
+        errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
+        plot(title="FD error (RK2)",
+            h,errors,
+            xlabel=L"h",
+            ylabel="error",
+            label=labels,
+            marker=markers,
+            xaxis=:log,
+            yaxis=:log)
+        display(plot!())
+
+        # rates = [rate_RRK,rate_RRK_dt0,rate_RRK_γ0]
+        # plot(rates,
+        #     title="FD convergence rate (RRK)",
+        #     xlabel="refinement index",
+        #     ylabel="rate",
+        #     label=labels,
+        #     marker=markers,
+        #     xaxis=:flip)
+        # display(plot!())
+    end
+
+    if write_mat
+        write(file,"errs_RRK2",errs_RRK)
+        write(file,"errs_RRK2_dt0",errs_RRK_dt0)
+        write(file,"errs_RRK2_g0",errs_RRK_γ0)
+    end
+
+
+    if write_mat
+        write(file,"h_derv_test",h)
+    end
+    println("End of derivative tests.")
+end
+
 
 #==============================================================================#
-# Running RK and RRK to observe growth of adjoint solution.
+# 2. Convergence of discrete adjoint.
 
-ts_RK.T  = 200
-ts_RRK.T = 200
+if run_adj_conv
+    print("\nRunning adjoint convergence tests .... ")
 
-dt_RK4 = 0.1#0.9
-dt_RK3 = 0.1#0.65
-dt_RK2 = 0.1#0.4
+    ts_RK.T = 2
+    ts_RRK.T = 2
+    dt_small = 0.00001
+
+    dt0 = 1
+    Nref = 5
+
+    if write_mat
+        write(file,"T_adj_conv",ts_RK.T)
+        write(file,"dt_small",dt_small)
+    end
+
+    # computing "true" solution by RK with small dt
+    ts_RK.dt = dt_small
+    RK_solver!(arrks_RK,ts_RK,rk4)
+    arrks_RK.uT_adj = arrks_RK.u[:,end]
+    RK_solver!(arrks_RK,ts_RK,rk4;adj=true)
+    uT_true = arrks_RK.u[:,end]
+    z0_true = arrks_RK.u_adj[:,1]
+
+
+    # RK4 case ----------------------------------------------------------------#
+    rk = rk4
+
+    # fwd RK case
+    fwd_flag = true
+    cerrs_fwd_RK,crate_fwd_RK,dt = adj_conv_test!(RK_solver!,arrks_RK,ts_RK,rk,dt0,Nref,uT_true,fwd_flag)
+
+    # fwd RRK case
+    fwd_flag = true
+    cerrs_fwd_RRK,crate_fwd_RRK,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,uT_true,fwd_flag)
+
+    # adj RK case
+    fwd_flag = false
+    cerrs_adj_RK,crate_adj_RK,dt = adj_conv_test!(RK_solver!,arrks_RK,ts_RK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case
+    fwd_flag = false
+    arrks_RRK.dt_cnst = false
+    arrks_RRK.γ_cnst  = false
+    cerrs_adj_RRK,crate_adj_RRK,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case (dt*-const)
+    fwd_flag = false
+    arrks_RRK.dt_cnst = true
+    arrks_RRK.γ_cnst  = false
+    cerrs_adj_RRK_dt0,crate_adj_RRK_dt0,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case (γ-const)
+    fwd_flag = false
+    arrks_RRK.dt_cnst = true
+    arrks_RRK.γ_cnst  = true
+    cerrs_adj_RRK_γ0,crate_adj_RRK_γ0,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    if make_plot
+        labels = ["RK" "RRK"]
+        markers = [:circle :square]
+        plot(dt,[cerrs_fwd_RK, cerrs_fwd_RRK],
+            title="Forward error (RK4)",
+            xaxis=:log,
+            yaxis=:log,
+            label=labels,
+            marker=markers,
+            legend=:topleft,
+            xlabel="dt")
+        display(plot!())
+
+        labels = ["RK" "RRK"]
+        markers = [:circle :square]
+        plot([crate_fwd_RK, crate_fwd_RRK],
+            title="Forward rates (RK4)",
+            label=labels,
+            marker=markers,
+            legend=:bottomright)
+        display(plot!())
+
+        labels = ["RK" "RRK" "RRK (Δt*-const)" "RRK (γ-const)"]
+        markers = [:circle :square :cross :star]
+        plot(dt,[cerrs_adj_RK, cerrs_adj_RRK, cerrs_adj_RRK_dt0, cerrs_adj_RRK_γ0],
+            title="Adjoint error (RK4)",
+            xaxis=:log,
+            yaxis=:log,
+            label=labels,
+            marker=markers,
+            legend=:topleft,
+            xlabel="dt")
+        display(plot!())
+
+        labels = ["RK" "RRK" "RRK (Δt*-const)" "RRK (γ-const)"]
+        markers = [:circle :square :cross :star]
+        plot([crate_adj_RK, crate_adj_RRK, crate_adj_RRK_dt0, crate_adj_RRK_γ0],
+            title="Adjoint rates (RK4)",
+            label=labels,
+            marker=markers,
+            legend=:bottomright)
+        display(plot!())
+    end
+
+    if write_mat
+        write(file,"cerrs_fwd_RK4",cerrs_fwd_RK)
+        write(file,"cerrs_fwd_RRK4",cerrs_fwd_RRK)
+        write(file,"cerrs_adj_RK4",cerrs_adj_RK)
+        write(file,"cerrs_adj_RRK4",cerrs_adj_RRK)
+        write(file,"cerrs_adj_RRK4_dt0",cerrs_adj_RRK_dt0)
+        write(file,"cerrs_adj_RRK4_g0",cerrs_adj_RRK_γ0)
+    end
+
+
+    # RK3 ---------------------------------------------------------------------#
+    rk = rk3
+
+    # fwd RK case
+    fwd_flag = true
+    cerrs_fwd_RK,crate_fwd_RK,dt = adj_conv_test!(RK_solver!,arrks_RK,ts_RK,rk,dt0,Nref,uT_true,fwd_flag)
+
+    # fwd RRK case
+    fwd_flag = true
+    cerrs_fwd_RRK,crate_fwd_RRK,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,uT_true,fwd_flag)
+
+    # adj RK case
+    fwd_flag = false
+    cerrs_adj_RK,crate_adj_RK,dt = adj_conv_test!(RK_solver!,arrks_RK,ts_RK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case
+    fwd_flag = false
+    arrks_RRK.dt_cnst = false
+    arrks_RRK.γ_cnst  = false
+    cerrs_adj_RRK,crate_adj_RRK,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case (dt*-const)
+    fwd_flag = false
+    arrks_RRK.dt_cnst = true
+    arrks_RRK.γ_cnst  = false
+    cerrs_adj_RRK_dt0,crate_adj_RRK_dt0,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case (γ-const)
+    fwd_flag = false
+    arrks_RRK.dt_cnst = true
+    arrks_RRK.γ_cnst  = true
+    cerrs_adj_RRK_γ0,crate_adj_RRK_γ0,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    if make_plot
+        labels = ["RK" "RRK"]
+        markers = [:circle :square]
+        plot(dt,[cerrs_fwd_RK, cerrs_fwd_RRK],
+            title="Forward error (RK3)",
+            xaxis=:log,
+            yaxis=:log,
+            label=labels,
+            marker=markers,
+            legend=:topleft,
+            xlabel="dt")
+        display(plot!())
+
+        labels = ["RK" "RRK"]
+        markers = [:circle :square]
+        plot([crate_fwd_RK, crate_fwd_RRK],
+            title="Forward rates (RK3)",
+            label=labels,
+            marker=markers,
+            legend=:bottomright)
+        display(plot!())
+
+        labels = ["RK" "RRK" "RRK (Δt*-const)" "RRK (γ-const)"]
+        markers = [:circle :square :cross :star]
+        plot(dt,[cerrs_adj_RK, cerrs_adj_RRK, cerrs_adj_RRK_dt0, cerrs_adj_RRK_γ0],
+            title="Adjoint error (RK3)",
+            xaxis=:log,
+            yaxis=:log,
+            label=labels,
+            marker=markers,
+            legend=:topleft,
+            xlabel="dt")
+        display(plot!())
+
+        labels = ["RK" "RRK" "RRK (Δt*-const)" "RRK (γ-const)" ]
+        markers = [:circle :square :cross :star]
+        plot([crate_adj_RK, crate_adj_RRK, crate_adj_RRK_dt0, crate_adj_RRK_γ0],
+            title="Adjoint rates (RK3)",
+            label=labels,
+            marker=markers,
+            legend=:bottomright)
+        display(plot!())
+    end
+
+    if write_mat
+        write(file,"cerrs_fwd_RK3",cerrs_fwd_RK)
+        write(file,"cerrs_fwd_RRK3",cerrs_fwd_RRK)
+        write(file,"cerrs_adj_RK3",cerrs_adj_RK)
+        write(file,"cerrs_adj_RRK3",cerrs_adj_RRK)
+        write(file,"cerrs_adj_RRK3_dt0",cerrs_adj_RRK_dt0)
+        write(file,"cerrs_adj_RRK3_g0",cerrs_adj_RRK_γ0)
+    end
+
+
+    # RK2 ---------------------------------------------------------------------#
+    rk = rk2
+
+    # fwd RK case
+    fwd_flag = true
+    cerrs_fwd_RK,crate_fwd_RK,dt = adj_conv_test!(RK_solver!,arrks_RK,ts_RK,rk,dt0,Nref,uT_true,fwd_flag)
+
+    # fwd RRK case
+    fwd_flag = true
+    cerrs_fwd_RRK,crate_fwd_RRK,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,uT_true,fwd_flag)
+
+    # adj RK case
+    fwd_flag = false
+    cerrs_adj_RK,crate_adj_RK,dt = adj_conv_test!(RK_solver!,arrks_RK,ts_RK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case
+    fwd_flag = false
+    arrks_RRK.dt_cnst = false
+    arrks_RRK.γ_cnst  = false
+    cerrs_adj_RRK,crate_adj_RRK,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case (dt*-const)
+    fwd_flag = false
+    arrks_RRK.dt_cnst = true
+    arrks_RRK.γ_cnst  = false
+    cerrs_adj_RRK_dt0,crate_adj_RRK_dt0,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    # adj RRK case (γ-const)
+    fwd_flag = false
+    arrks_RRK.dt_cnst = true
+    arrks_RRK.γ_cnst  = true
+    cerrs_adj_RRK_γ0,crate_adj_RRK_γ0,dt = adj_conv_test!(RRK_solver!,arrks_RRK,ts_RRK,rk,dt0,Nref,z0_true,fwd_flag)
+
+    if make_plot
+        labels = ["RK" "RRK"]
+        markers = [:circle :square]
+        plot(dt,[cerrs_fwd_RK, cerrs_fwd_RRK],
+            title="Forward error (RK2)",
+            xaxis=:log,
+            yaxis=:log,
+            label=labels,
+            marker=markers,
+            legend=:topleft,
+            xlabel="dt")
+        display(plot!())
+
+        labels = ["RK" "RRK"]
+        markers = [:circle :square]
+        plot([crate_fwd_RK, crate_fwd_RRK],
+            title="Forward rates (RK2)",
+            label=labels,
+            marker=markers,
+            legend=:bottomright)
+        display(plot!())
+
+        labels = ["RK" "RRK" "RRK (γ-const)" "RRK (Δt*-const)"]
+        markers = [:circle :square :cross :star]
+        plot(dt,[cerrs_adj_RK, cerrs_adj_RRK, cerrs_adj_RRK_dt0, cerrs_adj_RRK_γ0],
+            title="Adjoint error (RK2)",
+            xaxis=:log,
+            yaxis=:log,
+            label=labels,
+            marker=markers,
+            legend=:topleft,
+            xlabel="dt")
+        display(plot!())
+
+        labels = ["RK" "RRK" "RRK (Δt*-const)" "RRK (γ-const)"]
+        markers = [:circle :square :cross :star]
+        plot([crate_adj_RK, crate_adj_RRK, crate_adj_RRK_dt0, crate_adj_RRK_γ0],
+            title="Adjoint rates (RK2)",
+            label=labels,
+            marker=markers,
+            legend=:bottomright)
+        display(plot!())
+    end
+
+    if write_mat
+        write(file,"cerrs_fwd_RK2",cerrs_fwd_RK)
+        write(file,"cerrs_fwd_RRK2",cerrs_fwd_RRK)
+        write(file,"cerrs_adj_RK2",cerrs_adj_RK)
+        write(file,"cerrs_adj_RRK2",cerrs_adj_RRK)
+        write(file,"cerrs_adj_RRK2_g0",cerrs_adj_RRK_γ0)
+        write(file,"cerrs_adj_RRK2_dt0",cerrs_adj_RRK_dt0)
+    end
+
+
+    if write_mat
+        write(file,"dt_adj_conv",dt)
+    end
+
+    println("End of adjoint convergence tests.")
+end
+
+
+#==============================================================================#
+# 3. Accuracy of discrete adjoint experiment.
 
 if run_adj_growth
-    println("Running adjoint growth numerical experiment.")
+    print("\nRunning adjoint growth tests ... ")
+
+    ts_RK.T  = 200
+    ts_RRK.T = 200
+
+    dt_RK4 = 0.9#0.9
+    dt_RK3 = 0.9#0.65
+    dt_RK2 = 0.9#0.4
 
 
     # RK4 case ----------------------------------------------------------------#
@@ -98,14 +622,10 @@ if run_adj_growth
 
     # Running RK
     RK_solver!(arrks_RK,ts_RK,rk)
-    u1_RK = arrks_RK.u[1,:]
-    u2_RK = arrks_RK.u[2,:]
 
     # Running adj RK
     arrks_RK.uT_adj = arrks_RK.u[:,end]
     RK_solver!(arrks_RK,ts_RK,rk;adj=true)
-    z1_RK = arrks_RK.u_adj[1,:]
-    z2_RK = arrks_RK.u_adj[2,:]
 
     if make_plot
         plot(title="RK4 entropy production",
@@ -116,14 +636,16 @@ if run_adj_growth
         display(plot!())
 
         plot(title="RK4 solution",
-            u1_RK,u2_RK,
+            arrks_RK.u[1,:],
+            arrks_RK.u[2,:],
             xlabel=L"y_1",
             ylabel=L"y_2",
             legend=false)
         display(plot!())
 
         plot(title="RK4 adjoint solution",
-            z1_RK,z2_RK,
+            arrks_RK.u_adj[1,:],
+            arrks_RK.u_adj[2,:],
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
@@ -133,44 +655,41 @@ if run_adj_growth
     if write_mat
         write(file,"dt_RK4",dt_RK4)
         write(file,"t_RK4",ts_RK.t)
-        write(file,"y1_RK4",u1_RK)
-        write(file,"y2_RK4",u2_RK)
-        write(file,"y1_RK4_adj",z1_RK)
-        write(file,"y2_RK4_adj",z2_RK)
+        write(file,"y1_fwd_RK4",arrks_RK.u[1,:])
+        write(file,"y2_fwd_RK4",arrks_RK.u[2,:])
+        write(file,"y1_adj_RK4",arrks_RK.u_adj[1,:])
+        write(file,"y2_adj_RK4",arrks_RK.u_adj[2,:])
     end
 
     # Running RRK
     RRK_solver!(arrks_RRK,ts_RRK,rk)
-    u1_RRK = arrks_RRK.u[1,:]
-    u2_RRK = arrks_RRK.u[2,:]
-
-    # Running adj RRK (γ-constant)
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
     arrks_RRK.uT_adj = arrks_RRK.u[:,end]
-    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK_γ0 = arrks_RRK.u_adj[1,:]
-    z2_RRK_γ0 = arrks_RRK.u_adj[2,:]
-
-    # Running adj RRK (Δt*-constant)
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = true
-    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
-    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK_dt0 = arrks_RRK.u_adj[1,:]
-    z2_RRK_dt0 = arrks_RRK.u_adj[2,:]
 
     # Running adj RRK
     arrks_RRK.γ_cnst = false
     arrks_RRK.dt_cnst = false
-    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK = arrks_RRK.u_adj[1,:]
-    z2_RRK = arrks_RRK.u_adj[2,:]
+    z1 = arrks_RRK.u_adj[1,:]
+    z2 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (Δt*-constant)
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_dt0 = arrks_RRK.u_adj[1,:]
+    z2_dt0 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (γ-constant)
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_γ0 = arrks_RRK.u_adj[1,:]
+    z2_γ0 = arrks_RRK.u_adj[2,:]
 
     if make_plot
         plot(title="RRK4 solution",
-            u1_RRK,u2_RRK,
+            arrks_RRK.u[1,:],
+            arrks_RRK.u[2,:],
             xlabel=L"y_1",
             ylabel=L"y_2",
             legend=false)
@@ -190,22 +709,22 @@ if run_adj_growth
             legend=false)
         display(plot!())
 
-        plot(title="RRK4 adjoint solution (γ-const)",
-            z1_RRK_γ0,z2_RRK_γ0,
+        plot(title="RRK4 adjoint solution",
+            z1,z2,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
         display(plot!())
 
         plot(title="RRK4 adjoint solution (Δt*-const)",
-            z1_RRK_dt0,z2_RRK_dt0,
+            z1_dt0,z2_dt0,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
         display(plot!())
 
-        plot(title="RRK4 adjoint solution",
-            z1_RRK,z2_RRK,
+        plot(title="RRK4 adjoint solution (γ-const)",
+            z1_γ0,z2_γ0,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
@@ -214,14 +733,14 @@ if run_adj_growth
 
     if write_mat
         write(file,"t_RRK4",ts_RRK.t)
-        write(file,"y1_RRK4",u1_RRK)
-        write(file,"y2_RRK4",u2_RRK)
-        write(file,"y1_RRK4_adj",z1_RRK)
-        write(file,"y2_RRK4_adj",z2_RRK)
-        write(file,"y1_RRK4_adj_g0",z1_RRK_γ0)
-        write(file,"y2_RRK4_adj_g0",z2_RRK_γ0)
-        write(file,"y1_RRK4_adj_dt0",z1_RRK_dt0)
-        write(file,"y2_RRK4_adj_dt0",z2_RRK_dt0)
+        write(file,"y1_fwd_RRK4",arrks_RRK.u[1,:])
+        write(file,"y2_fwd_RRK4",arrks_RRK.u[2,:])
+        write(file,"y1_adj_RRK4",z1)
+        write(file,"y2_adj_RRK4",z2)
+        write(file,"y1_adj_RRK4_dt0",z1_dt0)
+        write(file,"y2_adj_RRK4_dt0",z2_dt0)
+        write(file,"y1_adj_RRK4_g0",z1_γ0)
+        write(file,"y2_adj_RRK4_g0",z2_γ0)
     end
 
 
@@ -232,14 +751,10 @@ if run_adj_growth
 
     # Running RK
     RK_solver!(arrks_RK,ts_RK,rk)
-    u1_RK = arrks_RK.u[1,:]
-    u2_RK = arrks_RK.u[2,:]
 
     # Running adj RK
     arrks_RK.uT_adj = arrks_RK.u[:,end]
     RK_solver!(arrks_RK,ts_RK,rk;adj=true)
-    z1_RK = arrks_RK.u_adj[1,:]
-    z2_RK = arrks_RK.u_adj[2,:]
 
     if make_plot
         plot(title="RK3 entropy production",
@@ -250,14 +765,16 @@ if run_adj_growth
         display(plot!())
 
         plot(title="RK3 solution",
-            u1_RK,u2_RK,
+            arrks_RK.u[1,:],
+            arrks_RK.u[2,:],
             xlabel=L"y_1",
             ylabel=L"y_2",
             legend=false)
         display(plot!())
 
         plot(title="RK3 adjoint solution",
-            z1_RK,z2_RK,
+            arrks_RK.u_adj[1,:],
+            arrks_RK.u_adj[2,:],
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
@@ -267,44 +784,41 @@ if run_adj_growth
     if write_mat
         write(file,"dt_RK3",dt_RK3)
         write(file,"t_RK3",ts_RK.t)
-        write(file,"y1_RK3",u1_RK)
-        write(file,"y2_RK3",u2_RK)
-        write(file,"y1_RK3_adj",z1_RK)
-        write(file,"y2_RK3_adj",z2_RK)
+        write(file,"y1_fwd_RK3",arrks_RK.u[1,:])
+        write(file,"y2_fwd_RK3",arrks_RK.u[2,:])
+        write(file,"y1_adj_RK3",arrks_RK.u_adj[1,:])
+        write(file,"y2_adj_RK3",arrks_RK.u_adj[2,:])
     end
 
     # Running RRK
     RRK_solver!(arrks_RRK,ts_RRK,rk)
-    u1_RRK = arrks_RRK.u[1,:]
-    u2_RRK = arrks_RRK.u[2,:]
-
-    # Running adj RRK (γ-constant)
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
     arrks_RRK.uT_adj = arrks_RRK.u[:,end]
-    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK_γ0 = arrks_RRK.u_adj[1,:]
-    z2_RRK_γ0 = arrks_RRK.u_adj[2,:]
-
-    # Running adj RRK (Δt*-constant)
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = true
-    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
-    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK_dt0 = arrks_RRK.u_adj[1,:]
-    z2_RRK_dt0 = arrks_RRK.u_adj[2,:]
 
     # Running adj RRK
     arrks_RRK.γ_cnst = false
     arrks_RRK.dt_cnst = false
-    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK = arrks_RRK.u_adj[1,:]
-    z2_RRK = arrks_RRK.u_adj[2,:]
+    z1 = arrks_RRK.u_adj[1,:]
+    z2 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (Δt*-constant)
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_dt0 = arrks_RRK.u_adj[1,:]
+    z2_dt0 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (γ-constant)
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_γ0 = arrks_RRK.u_adj[1,:]
+    z2_γ0 = arrks_RRK.u_adj[2,:]
 
     if make_plot
         plot(title="RRK3 solution",
-            u1_RRK,u2_RRK,
+            arrks_RRK.u[1,:],
+            arrks_RRK.u[2,:],
             xlabel=L"y_1",
             ylabel=L"y_2",
             legend=false)
@@ -324,22 +838,22 @@ if run_adj_growth
             legend=false)
         display(plot!())
 
-        plot(title="RRK3 adjoint solution (γ-const)",
-            z1_RRK_γ0,z2_RRK_γ0,
+        plot(title="RRK3 adjoint solution",
+            z1,z2,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
         display(plot!())
 
         plot(title="RRK3 adjoint solution (Δt*-const)",
-            z1_RRK_dt0,z2_RRK_dt0,
+            z1_dt0,z2_dt0,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
         display(plot!())
 
-        plot(title="RRK3 adjoint solution",
-            z1_RRK,z2_RRK,
+        plot(title="RRK3 adjoint solution (γ-const)",
+            z1_γ0,z2_γ0,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
@@ -348,14 +862,14 @@ if run_adj_growth
 
     if write_mat
         write(file,"t_RRK3",ts_RRK.t)
-        write(file,"y1_RRK3",u1_RRK)
-        write(file,"y2_RRK3",u2_RRK)
-        write(file,"y1_RRK3_adj",z1_RRK)
-        write(file,"y2_RRK3_adj",z2_RRK)
-        write(file,"y1_RRK3_adj_g0",z1_RRK_γ0)
-        write(file,"y2_RRK3_adj_g0",z2_RRK_γ0)
-        write(file,"y1_RRK3_adj_dt0",z1_RRK_dt0)
-        write(file,"y2_RRK3_adj_dt0",z2_RRK_dt0)
+        write(file,"y1_fwd_RRK3",arrks_RRK.u[1,:])
+        write(file,"y2_fwd_RRK3",arrks_RRK.u[2,:])
+        write(file,"y1_adj_RRK3",z1)
+        write(file,"y2_adj_RRK3",z2)
+        write(file,"y1_adj_RRK3_dt0",z1_dt0)
+        write(file,"y2_adj_RRK3_dt0",z2_dt0)
+        write(file,"y1_adj_RRK3_g0",z1_γ0)
+        write(file,"y2_adj_RRK3_g0",z2_γ0)
     end
 
 
@@ -366,14 +880,10 @@ if run_adj_growth
 
     # Running RK
     RK_solver!(arrks_RK,ts_RK,rk)
-    u1_RK = arrks_RK.u[1,:]
-    u2_RK = arrks_RK.u[2,:]
 
     # Running adj RK
     arrks_RK.uT_adj = arrks_RK.u[:,end]
     RK_solver!(arrks_RK,ts_RK,rk;adj=true)
-    z1_RK = arrks_RK.u_adj[1,:]
-    z2_RK = arrks_RK.u_adj[2,:]
 
     if make_plot
         plot(title="RK2 entropy production",
@@ -384,14 +894,16 @@ if run_adj_growth
         display(plot!())
 
         plot(title="RK2 solution",
-            u1_RK,u2_RK,
+            arrks_RK.u[1,:],
+            arrks_RK.u[2,:],
             xlabel=L"y_1",
             ylabel=L"y_2",
             legend=false)
         display(plot!())
 
         plot(title="RK2 adjoint solution",
-            z1_RK,z2_RK,
+            arrks_RK.u_adj[1,:],
+            arrks_RK.u_adj[2,:],
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
@@ -401,44 +913,41 @@ if run_adj_growth
     if write_mat
         write(file,"dt_RK2",dt_RK2)
         write(file,"t_RK2",ts_RK.t)
-        write(file,"y1_RK2",u1_RK)
-        write(file,"y2_RK2",u2_RK)
-        write(file,"y1_RK2_adj",z1_RK)
-        write(file,"y2_RK2_adj",z2_RK)
+        write(file,"y1_fwd_RK2",arrks_RK.u[1,:])
+        write(file,"y2_fwd_RK2",arrks_RK.u[2,:])
+        write(file,"y1_adj_RK2",arrks_RK.u_adj[1,:])
+        write(file,"y2_adj_RK2",arrks_RK.u_adj[2,:])
     end
 
     # Running RRK
     RRK_solver!(arrks_RRK,ts_RRK,rk)
-    u1_RRK = arrks_RRK.u[1,:]
-    u2_RRK = arrks_RRK.u[2,:]
-
-    # Running adj RRK (γ-constant)
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
     arrks_RRK.uT_adj = arrks_RRK.u[:,end]
-    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK_γ0 = arrks_RRK.u_adj[1,:]
-    z2_RRK_γ0 = arrks_RRK.u_adj[2,:]
-
-    # Running adj RRK (Δt*-constant)
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = true
-    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
-    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK_dt0 = arrks_RRK.u_adj[1,:]
-    z2_RRK_dt0 = arrks_RRK.u_adj[2,:]
 
     # Running adj RRK
     arrks_RRK.γ_cnst = false
     arrks_RRK.dt_cnst = false
-    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
     RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-    z1_RRK = arrks_RRK.u_adj[1,:]
-    z2_RRK = arrks_RRK.u_adj[2,:]
+    z1 = arrks_RRK.u_adj[1,:]
+    z2 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (Δt*-constant)
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_dt0 = arrks_RRK.u_adj[1,:]
+    z2_dt0 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (γ-constant)
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_γ0 = arrks_RRK.u_adj[1,:]
+    z2_γ0 = arrks_RRK.u_adj[2,:]
 
     if make_plot
         plot(title="RRK2 solution",
-            u1_RRK,u2_RRK,
+            arrks_RRK.u[1,:],
+            arrks_RRK.u[2,:],
             xlabel=L"y_1",
             ylabel=L"y_2",
             legend=false)
@@ -458,22 +967,22 @@ if run_adj_growth
             legend=false)
         display(plot!())
 
-        plot(title="RRK2 adjoint solution (γ-const)",
-            z1_RRK_γ0,z2_RRK_γ0,
+        plot(title="RRK2 adjoint solution",
+            z1,z2,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
         display(plot!())
 
         plot(title="RRK2 adjoint solution (Δt*-const)",
-            z1_RRK_dt0,z2_RRK_dt0,
+            z1_dt0,z2_dt0,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
         display(plot!())
 
-        plot(title="RRK2 adjoint solution",
-            z1_RRK,z2_RRK,
+        plot(title="RRK2 adjoint solution (γ-const)",
+            z1_γ0,z2_γ0,
             xlabel=L"\lambda_1",
             ylabel=L"\lambda_2",
             legend=false)
@@ -482,204 +991,21 @@ if run_adj_growth
 
     if write_mat
         write(file,"t_RRK2",ts_RRK.t)
-        write(file,"y1_RRK2",u1_RRK)
-        write(file,"y2_RRK2",u2_RRK)
-        write(file,"y1_RRK2_adj",z1_RRK)
-        write(file,"y2_RRK2_adj",z2_RRK)
-        write(file,"y1_RRK2_adj_g0",z1_RRK_γ0)
-        write(file,"y2_RRK2_adj_g0",z2_RRK_γ0)
-        write(file,"y1_RRK2_adj_dt0",z1_RRK_dt0)
-        write(file,"y2_RRK2_adj_dt0",z2_RRK_dt0)
+        write(file,"y1_fwd_RRK2",arrks_RRK.u[1,:])
+        write(file,"y2_fwd_RRK2",arrks_RRK.u[2,:])
+        write(file,"y1_adj_RRK2",z1)
+        write(file,"y2_adj_RRK2",z2)
+        write(file,"y1_adj_RRK2_dt0",z1_dt0)
+        write(file,"y2_adj_RRK2_dt0",z2_dt0)
+        write(file,"y1_adj_RRK2_g0",z1_γ0)
+        write(file,"y2_adj_RRK2_g0",z2_γ0)
     end
-    println("End of adjoint growth numerical experiment.")
+
+
+    println("End of adjoint growth experiment.")
 end
 
 
-#==============================================================================#
-# Running derivative test of different lin RRK to observe effects of improper
-# linearization.
-
-ts_RK.T  = 200
-ts_RRK.T = 200
-
-dt_RK4 = 0.1#0.9
-dt_RK3 = 0.1#0.65
-dt_RK2 = 0.1#0.4
-
-if run_derv_test
-    println("Running derivative numerical tests.")
-
-    Nref = 5
-    h0 = 2^(-12)
-    if write_mat
-        write(file,"Nref",Nref)
-        write(file,"h0",h0)
-    end
-
-    arrks_h = AdjRRK_struct()
-    @pack! arrks_h = f,df,η,∇η,Hη
-
-    Random.seed!(123)
-    arrks_RRK.u0_lin = randn(2)
-
-
-    # RK4 case ----------------------------------------------------------------#
-    rk = rk4
-    ts_RRK.dt = dt_RK4
-
-    # γ-const case
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
-    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    # dt*-const case
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = true
-    errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    # with proper linearization
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = false
-    errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    if make_plot
-        labels = ["γ constant" "Δt* constant" "proper lin."]
-        markers = [:circle :square :star5]
-
-        errors = [errs_RRK_γ0,errs_RRK_dt0,errs_RRK]
-        plot(title="FD error (RRK4)",
-            h,errors,
-            xlabel=L"h",
-            ylabel="error",
-            label=labels,
-            marker=markers,
-            xaxis=:log,
-            yaxis=:log)
-        display(plot!())
-
-        # rates = [rate_RRK_γ0,rate_RRK_dt0,rate_RRK]
-        # plot(rates,
-        #     title="FD convergence rate (RRK4)",
-        #     xlabel="refinement index",
-        #     ylabel="rate",
-        #     label=labels,
-        #     marker=markers,
-        #     xaxis=:flip)
-        # display(plot!())
-    end
-
-    if write_mat
-        write(file,"errs_RRK4_g0",errs_RRK_γ0)
-        write(file,"errs_RRK4_dt0",errs_RRK_dt0)
-        write(file,"errs_RRK4",errs_RRK)
-    end
-
-
-    # RK3 case ----------------------------------------------------------------#
-    rk = rk3
-    ts_RRK.dt = dt_RK3
-
-    # γ-const case
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
-    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    # dt*-const case
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = true
-    errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    # with proper linearization
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = false
-    errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    if make_plot
-        labels = ["γ constant" "Δt* constant" "proper lin."]
-        markers = [:circle :square :star5]
-
-        errors = [errs_RRK_γ0,errs_RRK_dt0,errs_RRK]
-        plot(title="FD error (RK3)",
-            h,errors,
-            xlabel=L"h",
-            ylabel="error",
-            label=labels,
-            marker=markers,
-            xaxis=:log,
-            yaxis=:log)
-        display(plot!())
-
-        # rates = [rate_RRK_γ0,rate_RRK_dt0,rate_RRK]
-        # plot(rates,
-        #     title="FD convergence rate (RRK3)",
-        #     xlabel="refinement index",
-        #     ylabel="rate",
-        #     label=labels,
-        #     marker=markers,
-        #     xaxis=:flip)
-        # display(plot!())
-    end
-
-    if write_mat
-        write(file,"errs_RRK3_g0",errs_RRK_γ0)
-        write(file,"errs_RRK3_dt0",errs_RRK_dt0)
-        write(file,"errs_RRK3",errs_RRK)
-    end
-
-
-    # RK2 case ----------------------------------------------------------------#
-    rk = rk2
-    ts_RRK.dt = dt_RK2
-
-    # γ-const case
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
-    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    # dt*-const case
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = true
-    errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    # with proper linearization
-    arrks_RRK.γ_cnst = false
-    arrks_RRK.dt_cnst = false
-    errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
-    if make_plot
-        labels = ["γ constant" "Δt* constant" "proper lin."]
-        markers = [:circle :square :star5]
-
-        errors = [errs_RRK_γ0,errs_RRK_dt0,errs_RRK]
-        plot(title="FD error (RK2)",
-            h,errors,
-            xlabel=L"h",
-            ylabel="error",
-            label=labels,
-            marker=markers,
-            xaxis=:log,
-            yaxis=:log)
-        display(plot!())
-
-        # rates = [rate_RRK_γ0,rate_RRK_dt0,rate_RRK]
-        # plot(rates,
-        #     title="FD convergence rate (RRK)",
-        #     xlabel="refinement index",
-        #     ylabel="rate",
-        #     label=labels,
-        #     marker=markers,
-        #     xaxis=:flip)
-        # display(plot!())
-    end
-
-    if write_mat
-        write(file,"errs_RRK2_g0",errs_RRK_γ0)
-        write(file,"errs_RRK2_dt0",errs_RRK_dt0)
-        write(file,"errs_RRK2",errs_RRK)
-    end
-
-    if write_mat
-        close(file)
-    end
-    println("End of derivative numerical tests.")
+if write_mat
+    close(file)
 end
