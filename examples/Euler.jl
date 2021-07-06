@@ -1,9 +1,14 @@
+# This code runs some numerical experiments and generates .mat files for adjoint
+# RRK paper. In particular, we run derivative tests, verifying linearization of
+# RRK, on 1D compressible Euler equations.
+
 using Plots
 using UnPack
 using LinearAlgebra
 using SparseArrays
 using Random
 using LaTeXStrings
+using MAT
 
 using ForwardDiff
 using StaticArrays
@@ -20,12 +25,20 @@ using .HybridizedSBPUtils
 
 using AdjRRK
 
+# Flags
+write_mat = true  # Want to output .mat file?
+make_plot = true # Want to output plots?
+
+if write_mat
+    file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK paper/figs/RRK_Euler.mat","w")
+end
 
 N = 3
 K1D = 16
 T = 1.5 #0.25
+t0 = 0
+CN = (N+1)^2/2  # estimated trace constant
 Nfields = 3
-
 
 ################################################################################
 ## Initial DG stuff
@@ -120,7 +133,7 @@ function rhs_global(Q,global_SBP_ops)
     return (x->-2*Ph*x).(rhsQ)
 end
 
-
+################################################################################
 ## Jacobian stuff
 
 # define Euler fluxes directly as functions of conservative variables
@@ -169,8 +182,6 @@ function rhs_global_jac(Q,global_SBP_ops)
     # compute jacobian using chain rule
     return kron(I(Nfields),-2*Ph) * (Jac - JLF) * dUdV * kron(I(Nfields),VhP) * dVdU * kron(I(Nfields),Vq)
 end
-
-
 
 function tuple_to_arr(X)
     return vcat(X...)
@@ -242,182 +253,137 @@ function Hη(u,δu;adj=false)
     return H*δu
 end
 
-#running derv test of df
-# u = u0 #randn(size(u0)).+10
-# δu = randn(size(u0))
-# h0 = 2^(-10)
-# Nref = 5
-# h = zeros(Nref+1)
-# h[1] = h0
-# for n=1:Nref
-#     h[n+1] = h[n]/2
-# end
-# errs = zeros(Nref+1)
-# rate = zeros(Nref)
-#
-# fu = f(u)
-# dfu = df(u,δu)
-# for n=1:Nref+1
-#     uh = u + h[n].*δu
-#     fuh = f(uh)
-#     dfuh = (fuh - fu) / h[n] #./norm(δu)
-#     errs[n] = norm( dfuh - dfu )
-# end
-# @show errs
-#
-# for n=1:Nref
-#     rate[n] = log2(errs[n]) - log2(errs[n+1])
-# end
-# @show rate
-
-# #running derv test of ∇η
-# u = u0#randn(size(u0)).+10
-# δu = randn(size(u0))
-# h0 = 2^(-8)
-# Nref = 3
-# h = zeros(Nref+1)
-# h[1] = h0
-# for n=1:Nref
-#     h[n+1] = h[n]/2
-# end
-# errs = zeros(Nref+1)
-# rate = zeros(Nref)
-#
-# ηu = η(u)
-# ∇ηu = ∇η(u)⋅δu
-# for n=1:Nref+1
-#     uh = u + h[n].*δu
-#     ηuh = η(uh)
-#     ∇ηuh = (ηuh - ηu) / h[n] #./norm(δu)
-#     errs[n] = norm( ∇ηuh - ∇ηu )
-# end
-# @show errs
-#
-# for n=1:Nref
-#     rate[n] = log2(errs[n]) - log2(errs[n+1])
-# end
-# @show rate
-
-# #running derv test of Hη
-# u = randn(size(u0)).+10
-# δu = randn(size(u0))
-# h0 = 2^(-8)
-# Nref = 3
-# h = zeros(Nref+1)
-# h[1] = h0
-# for n=1:Nref
-#     h[n+1] = h[n]/2
-# end
-# errs = zeros(Nref+1)
-# rate = zeros(Nref)
-#
-# ∇ηu = ∇η(u)
-# Hηu = Hη(u,δu)
-# for n=1:Nref+1
-#     uh = u + h[n].*δu
-#     ∇ηuh = ∇η(uh)
-#     Hηuh = (∇ηuh - ∇ηu) / h[n] #./norm(δu)
-#     errs[n] = norm( Hηuh - Hηu )
-# end
-# @show errs
-#
-# for n=1:Nref
-#     rate[n] = log2(errs[n]) - log2(errs[n+1])
-# end
-# @show rate
-
-#time stuff
-CN = (N+1)^2/2  # estimated trace constant
-dt = CFL / (CN*K1D)
-t0 = 0
-
 Q0 = vec.(Q0)
 u0 = tuple_to_arr(Q0)
 
-# Q00 = (x->reshape(x,length(rd.r),md.K)).(Q0)
-# display(scatter((x->rd.Vp*x).((x,Q00[3])),zcolor=rd.Vp*Q00[3],msw=0,ms=2,cam=(0,90),legend=false))
 
-## RK example
-
-#initializing data structs
-ts_RK = Time_struct()
-@pack! ts_RK = t0,T,dt
-
-arrks_RK = AdjRRK_struct()
-@pack! arrks_RK = f,df,η,∇η
-@pack! arrks_RK = u0
-arrks_RK.return_time = true
-arrks_RK.return_Δη = true
-
-#running forward solver
-RK_solver!(arrks_RK,ts_RK,rk4)
-Q_RK = arr_to_tuple(arrks_RK.u[:,end])
-Q_RK = (x->reshape(x,length(rd.r),md.K)).(Q_RK)
-# gr(aspect_ratio=1,legend=false)
-display(scatter((x->rd.Vp*x).((x,Q_RK[1])),zcolor=rd.Vp*Q_RK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RK solution"))
-display(plot(ts_RK.t,arrks_RK.Δη,legend=false,title="RK Δη"))
-
-#running linearized solver
-arrks_RK.u0_lin = u0
-RK_solver!(arrks_RK,ts_RK,rk4;lin=true)
-W_RK = arr_to_tuple(arrks_RK.u_lin[:,end])
-W_RK = (x->reshape(x,length(rd.r),md.K)).(W_RK)
-display(scatter((x->rd.Vp*x).((x,W_RK[1])),zcolor=rd.Vp*W_RK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RK lin solution"))
-
-#running adjoint solver
-arrks_RK.uT_adj = arrks_RK.u[:,end]
-RK_solver!(arrks_RK,ts_RK,rk4;adj=true)
-Z_RK = arr_to_tuple(arrks_RK.u_adj[:,1])
-Z_RK = (x->reshape(x,length(rd.r),md.K)).(Z_RK)
-display(scatter((x->rd.Vp*x).((x,Z_RK[1])),zcolor=rd.Vp*Z_RK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RK adj solution"))
-
-
-# #running deriv test on lin RK
-# arrks_RK.return_time = false
-# arrks_RK.return_Δη = false
-# arrks_RK.u0_lin = randn(size(u0))
-# Nref = 8
-# h0 = 2^(-6)
-# arrks_h = AdjRRK_struct(arrks_RK)
-# @pack! arrks_h = f,df
-# errs,rate,h = AdjRRK.derv_test!(RK_solver!,arrks_RK,arrks_h,ts_RK,rk4,h0,Nref)
-# @show rate
-#
-# #inner product test
-# ipt = AdjRRK.ip_test!(RK_solver!,arrks_RK,ts_RK,rk)
-
-
-## RRK example
-
-#initializing data structs
-ts_RRK = Time_struct()
-@pack! ts_RRK = t0,T,dt
+#==============================================================================#
+# Derivative tests
 
 arrks_RRK = AdjRRK_struct()
 @pack! arrks_RRK = f,df,η,∇η,Hη
 @pack! arrks_RRK = u0
-arrks_RRK.u0_lin = u0
 arrks_RRK.return_time = true
 arrks_RRK.return_Δη = true
 
-#running forward solver
-RRK_solver!(arrks_RRK,ts_RRK,rk)
-Q_RRK = arr_to_tuple(arrks_RRK.u[:,end])
-Q_RRK = (x->reshape(x,length(rd.r),md.K)).(Q_RRK)
-display(scatter((x->rd.Vp*x).((x,Q_RRK[1])),zcolor=rd.Vp*Q_RRK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RRK solution"))
-display(plot(ts_RRK.t,arrks_RRK.Δη,legend=false,title="RRK Δη"))
-display(plot(ts_RRK.t,arrks_RRK.γ,legend=false,title="RRK γ"))
+arrks_h = AdjRRK_struct()
+@pack! arrks_h = f,df,η,∇η,Hη
 
-arrks_RRK.uT_adj = arrks_RRK.u[:,end]
+ts_RRK = Time_struct()
+@pack! ts_RRK = t0,T
 
-#running linearized solver
-RRK_solver!(arrks_RRK,ts_RRK,rk;lin=true)
-W_RRK = arr_to_tuple(arrks_RRK.u_lin[:,end])
-W_RRK = (x->reshape(x,length(rd.r),md.K)).(W_RRK)
-display(scatter((x->rd.Vp*x).((x,W_RRK[1])),zcolor=rd.Vp*W_RRK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RRK lin solution"))
+Nref = 5
+h0 = 2^(-12)
 
-#running adjoint solver
-RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
-Z_RRK = arr_to_tuple(arrks_RRK.u_adj[:,1])
-Z_RRK = (x->reshape(x,length(rd.r),md.K)).(Z_RRK)
-display(scatter((x->rd.Vp*x).((x,Z_RRK[1])),zcolor=rd.Vp*Z_RRK[1],msw=0,ms=2,cam=(0,90),legend=false,title="RRK adj solution"))
+Random.seed!(05052021)
+arrks_RRK.u0_lin = randn(size(u0))
+
+
+# CFL=1 case ------------------------------------------------------------------#
+CFL=1
+dt = CFL / (CN*K1D)
+ts_RRK.dt = dt
+
+# with proper linearization
+arrks_RRK.γ_cnst = false
+arrks_RRK.dt_cnst = false
+errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk4,h0,Nref)
+
+# dt*-const case
+arrks_RRK.γ_cnst = false
+arrks_RRK.dt_cnst = true
+errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk4,h0,Nref)
+
+# γ-const case
+arrks_RRK.γ_cnst = true
+arrks_RRK.dt_cnst = true
+errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk4,h0,Nref)
+
+if make_plot
+    labels = ["proper lin." "Δt*-const" "γ-const"]
+    markers = [:circle :square :star5]
+
+    errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
+    plot(title="FD error (CFL=1)",
+        h,errors,
+        xlabel=L"h",
+        ylabel="error",
+        label=labels,
+        marker=markers,
+        xaxis=:log,
+        yaxis=:log)
+    display(plot!())
+
+    # rates = [rate_RRK,rate_RRK_dt0,rate_RRK_γ0]
+    # plot(rates,
+    #     title="FD convergence rate (CFL=1)",
+    #     xlabel="refinement index",
+    #     ylabel="rate",
+    #     label=labels,
+    #     marker=markers,
+    #     xaxis=:flip)
+    # display(plot!())
+end
+
+if write_mat
+    write(file,"errs_RRK_CFL1",errs_RRK)
+    write(file,"errs_RRK_CFL1_dt0",errs_RRK_dt0)
+    write(file,"errs_RRK_CFL1_g0",errs_RRK_γ0)
+end
+
+# CFL=1.5 case ------------------------------------------------------------------#
+CFL=1.5
+dt = CFL / (CN*K1D)
+ts_RRK.dt = dt
+
+# with proper linearization
+arrks_RRK.γ_cnst = false
+arrks_RRK.dt_cnst = false
+errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk4,h0,Nref)
+
+# dt*-const case
+arrks_RRK.γ_cnst = false
+arrks_RRK.dt_cnst = true
+errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk4,h0,Nref)
+
+# γ-const case
+arrks_RRK.γ_cnst = true
+arrks_RRK.dt_cnst = true
+errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk4,h0,Nref)
+
+if make_plot
+    labels = ["proper lin." "Δt*-const" "γ-const"]
+    markers = [:circle :square :star5]
+
+    errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
+    plot(title="FD error (CFL=1.5)",
+        h,errors,
+        xlabel=L"h",
+        ylabel="error",
+        label=labels,
+        marker=markers,
+        xaxis=:log,
+        yaxis=:log)
+    display(plot!())
+
+    # rates = [rate_RRK,rate_RRK_dt0,rate_RRK_γ0]
+    # plot(rates,
+    #     title="FD convergence rate (CFL=1.5)",
+    #     xlabel="refinement index",
+    #     ylabel="rate",
+    #     label=labels,
+    #     marker=markers,
+    #     xaxis=:flip)
+    # display(plot!())
+end
+
+if write_mat
+    write(file,"errs_RRK_CFL2",errs_RRK)
+    write(file,"errs_RRK_CFL2_dt0",errs_RRK_dt0)
+    write(file,"errs_RRK_CFL2_g0",errs_RRK_γ0)
+end
+
+if write_mat
+    write(file,"h_derv_test",h)
+    close(file)
+end
