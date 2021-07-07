@@ -84,8 +84,8 @@ end
 write_mat = true  # Want to output .mat file?
 make_plot = false # Want to output plots?
 
-run_derv_test  = false # Want to run derivative tests?
-run_adj_conv   = false # Want to run adjoint convergence tests?
+run_derv_test  = true # Want to run derivative tests?
+run_adj_conv   = true # Want to run adjoint convergence tests?
 run_adj_growth = true # Want to run adjoint growth tests?
 
 if write_mat
@@ -108,9 +108,6 @@ arrks_RRK = AdjRRK_struct()
 @pack! arrks_RRK = u0
 arrks_RRK.return_time = true
 arrks_RRK.return_Δη = true
-
-arrks_h = AdjRRK_struct()
-@pack! arrks_h = f,df,η,∇η,Hη
 
 ts_RK = Time_struct()
 @pack! ts_RK = t0
@@ -151,18 +148,18 @@ if run_derv_test
     arrks_RRK.dt_cnst = false
     errs_RRK,rate_RRK,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
 
-    # γ-const case
-    arrks_RRK.γ_cnst = true
-    arrks_RRK.dt_cnst = true
-    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
-
     # dt*-const case
     arrks_RRK.γ_cnst = false
     arrks_RRK.dt_cnst = true
     errs_RRK_dt0,rate_RRK_dt0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
 
+    # γ-const case
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
+
     if make_plot
-        labels = ["proper lin." "Δt* constant" "γ constant"]
+        labels = ["proper lin." "Δt*-const"-"γ const"]
         markers = [:circle :square :star5]
 
         errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
@@ -610,9 +607,9 @@ if run_adj_growth
     ts_RK.T  = 200
     ts_RRK.T = 200
 
-    dt_RK4 = 0.9#0.9
-    dt_RK3 = 0.9#0.65
-    dt_RK2 = 0.9#0.4
+    dt_RK4 = 0.1
+    dt_RK3 = 0.1
+    dt_RK2 = 0.1
 
 
     # RK4 case ----------------------------------------------------------------#
@@ -1001,6 +998,134 @@ if run_adj_growth
         write(file,"y2_adj_RRK2_g0",z2_γ0)
     end
 
+    # RK4, big dt -------------------------------------------------------------#
+    rk = rk4
+    dt_big = 0.9
+    ts_RK.dt = dt_big
+    ts_RRK.dt = dt_big
+
+    # Running RK
+    RK_solver!(arrks_RK,ts_RK,rk)
+
+    # Running adj RK
+    arrks_RK.uT_adj = arrks_RK.u[:,end]
+    RK_solver!(arrks_RK,ts_RK,rk;adj=true)
+
+    if make_plot
+        plot(title="RK4 entropy production (dt big)",
+            ts_RK.t,arrks_RK.Δη,
+            xlabel=L"t",
+            ylabel=L"\eta(t)-\eta(0)",
+            legend=false)
+        display(plot!())
+
+        plot(title="RK4 solution (dt big)",
+            arrks_RK.u[1,:],
+            arrks_RK.u[2,:],
+            xlabel=L"y_1",
+            ylabel=L"y_2",
+            legend=false)
+        display(plot!())
+
+        plot(title="RK4 adjoint solution (dt big)",
+            arrks_RK.u_adj[1,:],
+            arrks_RK.u_adj[2,:],
+            xlabel=L"\lambda_1",
+            ylabel=L"\lambda_2",
+            legend=false)
+        display(plot!())
+    end
+
+    if write_mat
+        write(file,"dt_big",dt_big)
+        write(file,"t_RK_big",ts_RK.t)
+        write(file,"y1_fwd_RK_big",arrks_RK.u[1,:])
+        write(file,"y2_fwd_RK_big",arrks_RK.u[2,:])
+        write(file,"y1_adj_RK_big",arrks_RK.u_adj[1,:])
+        write(file,"y2_adj_RK_big",arrks_RK.u_adj[2,:])
+    end
+
+    # Running RRK
+    RRK_solver!(arrks_RRK,ts_RRK,rk)
+    arrks_RRK.uT_adj = arrks_RRK.u[:,end]
+
+    # Running adj RRK
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = false
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1 = arrks_RRK.u_adj[1,:]
+    z2 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (Δt*-constant)
+    arrks_RRK.γ_cnst = false
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_dt0 = arrks_RRK.u_adj[1,:]
+    z2_dt0 = arrks_RRK.u_adj[2,:]
+
+    # Running adj RRK (γ-constant)
+    arrks_RRK.γ_cnst = true
+    arrks_RRK.dt_cnst = true
+    RRK_solver!(arrks_RRK,ts_RRK,rk;adj=true)
+    z1_γ0 = arrks_RRK.u_adj[1,:]
+    z2_γ0 = arrks_RRK.u_adj[2,:]
+
+    if make_plot
+        plot(title="RRK4 solution (dt big)",
+            arrks_RRK.u[1,:],
+            arrks_RRK.u[2,:],
+            xlabel=L"y_1",
+            ylabel=L"y_2",
+            legend=false)
+        display(plot!())
+
+        plot(title="RRK4 entropy production (dt big)",
+            ts_RRK.t,arrks_RRK.Δη,
+            xlabel=L"t",
+            ylabel=L"\eta(t)-\eta(0)",
+            legend=false)
+        display(plot!())
+
+        plot(title="RRK4 relaxation parameter (dt big)",
+            ts_RRK.t,arrks_RRK.γ,
+            xlabel=L"t",
+            ylabel=L"\gamma",
+            legend=false)
+        display(plot!())
+
+        plot(title="RRK4 adjoint solution (dt big)",
+            z1,z2,
+            xlabel=L"\lambda_1",
+            ylabel=L"\lambda_2",
+            legend=false)
+        display(plot!())
+
+        plot(title="RRK4 adjoint solution (Δt*-const, dt big)",
+            z1_dt0,z2_dt0,
+            xlabel=L"\lambda_1",
+            ylabel=L"\lambda_2",
+            legend=false)
+        display(plot!())
+
+        plot(title="RRK4 adjoint solution (γ-const, dt big)",
+            z1_γ0,z2_γ0,
+            xlabel=L"\lambda_1",
+            ylabel=L"\lambda_2",
+            legend=false)
+        display(plot!())
+    end
+
+    if write_mat
+        write(file,"t_RRK_big",ts_RRK.t)
+        write(file,"y1_fwd_RRK_big",arrks_RRK.u[1,:])
+        write(file,"y2_fwd_RRK_big",arrks_RRK.u[2,:])
+        write(file,"y1_adj_RRK_big",z1)
+        write(file,"y2_adj_RRK_big",z2)
+        write(file,"y1_adj_RRK_dt0_big",z1_dt0)
+        write(file,"y2_adj_RRK_dt0_big",z2_dt0)
+        write(file,"y1_adj_RRK_g0_big",z1_γ0)
+        write(file,"y2_adj_RRK_g0_big",z2_γ0)
+    end
 
     println("End of adjoint growth experiment.")
 end
