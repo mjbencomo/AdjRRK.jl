@@ -8,12 +8,6 @@ IPT_TOL = 1e-12
 DRV_TOL = 0.1
 CNV_TOL = 0.5
 
-# struct RKs
-#     stages::Int64
-#     b::Array{Float64,1}
-#     a::Array{Float64,1}
-# end
-
 struct RK_struct
     stages::Int64
     b::Array{Float64,1}
@@ -85,5 +79,21 @@ include("test_code.jl")
 export RK_solver!, IDT_solver!, RRK_solver!
 export RKs, rk2, rk4, rk3, RK_struct
 export AdjRRK_struct, Time_struct, cp_ops
+
+## Adding DIRRK stuff
+
+#3-stage, 3rd-order DIRK (from Persson)
+α = 0.435866521508459
+τ2 = (1+α)/2
+b1 = -(6α^2-16α+1)/4
+b2 = (6α^2-20α+5)/4
+s_rk = 3
+b_rk = [b1;b2;α]
+A_rk = [α 0 0; τ2-α α 0; b1 b2 α]
+dirk3 = RK_struct(s_rk,b_rk,A_rk)
+
+include("DIRRK_code.jl")
+
+export DIRK_solver!, DIRRK_solver!, dirk3
 
 end

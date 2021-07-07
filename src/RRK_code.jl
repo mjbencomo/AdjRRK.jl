@@ -258,6 +258,7 @@
 # end
 
 
+## Algorithms for generic explicit RRK methods.
 
 function RK_int(u,f,dt,rk::RK_struct)
     @unpack b,A = rk
@@ -721,8 +722,7 @@ function IDT_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk)
 end
 
 
-# --------------------------------------#
-# RRK ALGORITHM
+## RRK ALGORITHM
 #
 # Remark: in_flds and ops depend on the optional flags.
 #
@@ -750,6 +750,7 @@ end
 #   w,      lin=true
 #   z,      adj=true
 # ---------------------------------------#
+
 function RRK_solver!(arrks::AdjRRK_struct,ts::Time_struct,rk;lin=false,adj=false)
     if lin && ~(adj)
         RRK_lin!(arrks,ts,rk)
@@ -885,164 +886,3 @@ function RRK_adj!(arrks::AdjRRK_struct,ts::Time_struct,rk)
     end
     @pack! arrks = u_adj
 end
-
-# function RRK_solver(in_flds,ops,Time,rk;
-# lin=false,
-# adj=false,
-# γcnst=false,
-# corr=true,
-# return_time=false,
-# return_Δη=false)
-#
-#     t0,T,dt = Time
-#     Nt_tmp = ceil(Int,(T-t0)/dt)+1
-#     dt = (T-t0)/(Nt_tmp-1)
-#
-#     if lin && ~(adj)
-#     #linearized RRK algorithm
-#         w0,u,γ,dt_corr = in_flds
-#         Nt = length(γ)
-#         w = zeros(size(u))
-#         w[:,1] = w0
-#
-#         if γcnst
-#             for k=1:Nt-2
-#                 flds = (w[:,k],u[:,k],γ[k+1])
-#                 w[:,k+1] = RRKγ0_update_lin(flds,ops,dt,rk)
-#             end
-#             #last step
-#             flds = (w[:,Nt-1],u[:,Nt-1],γ[Nt])
-#             w[:,Nt] = RRKγ0_update_lin(flds,ops,dt_corr,rk)
-#             out_flds = w
-#         else
-#             ϱ = 0
-#             for k=1:Nt-2
-#                 flds = (w[:,k],u[:,k:k+1],γ[k+1],ϱ)
-#                 w[:,k+1],ϱ = RRK_update_lin(flds,ops,dt,rk)
-#             end
-#
-#             if ~corr
-#                 ϱ = 0
-#             end
-#             flds = (w[:,Nt-1],u[:,Nt-1:Nt],γ[Nt],ϱ,dt)
-#             w[:,Nt] = RRK_update_lin_last(flds,ops,dt_corr,rk)
-#             out_flds = w
-#         end
-#
-#     elseif adj
-#     #adjoint RRK algorithm
-#         zT,u,γ,dt_corr = in_flds
-#         Nt = length(γ)
-#         z = zeros(size(u))
-#         z[:,Nt] = zT
-#
-#         if γcnst
-#             flds = (z[:,Nt],u[:,Nt-1],γ[Nt])
-#             z[:,Nt-1] = RRKγ0_update_adj(flds,ops,dt_corr,rk)
-#             for k=Nt-2:-1:1
-#                 flds = (z[:,k+1],u[:,k],γ[k+1])
-#                 z[:,k] = RRKγ0_update_adj(flds,ops,dt,rk)
-#             end
-#             out_flds = z
-#         else
-#             flds = (z[:,Nt],u[:,Nt-1:Nt],γ[Nt],dt)
-#             z[:,Nt-1],ζ = RRK_update_adj_last(flds,ops,dt_corr,rk)
-#
-#             if ~corr
-#                 ζ = 0
-#             end
-#             for k=Nt-2:-1:1
-#                 flds = (z[:,k+1],u[:,k:k+1],γ[k+1],ζ)
-#                 z[:,k] = RRK_update_adj(flds,ops,dt,rk)
-#             end
-#             out_flds = z
-#         end
-#     else
-#     #RRK algorithm
-#         Nt_tmp = Nt_tmp + ceil(Int,Nt_tmp)
-#         f,η,∇η = ops
-#         u0 = in_flds
-#
-#         u = zeros(length(u0),Nt_tmp)
-#         u[:,1] = u0
-#         γ = ones(Nt_tmp)
-#
-#         t  = zeros(Nt_tmp)
-#         t[1] = t0
-#         k  = 0
-#         tk = t[1]
-#         dt_corr = dt #corrected time step size
-#         last_step = false
-#
-#         while tk<T && abs(T-tk)/T>1e-13 && ~last_step
-#             k += 1
-#             if t[k]+dt > T
-#                 # @show k
-#                 # @show tk
-#                 # @show t[k]+dt
-#                 last_step = true
-#                 dt_corr = T-t[k]
-#             end
-#             flds = (u[:,k],γ[k])
-#
-#             if(k+1>Nt_tmp)
-#                 err("Temp data size not large enough. dt must be too big, resulting in |γ-1|>>0")
-#             end
-#
-#             u[:,k+1],γ[k+1] = RRK_update(flds,(f,η,∇η),dt_corr,rk)
-#             t[k+1] = t[k] + γ[k+1]*dt_corr
-#             tk = t[k+1]
-#         end
-#
-#         Nt  = k+1
-#         u   = u[:,1:Nt]
-#         γ   = γ[1:Nt]
-#
-#         out_flds = (u,γ)
-#
-#         if return_Δη
-#             Δηu = zeros(Nt)
-#             ηu0 = η(u[:,1])
-#             for k=1:Nt-1
-#                 Δηu[k+1] = η(u[:,k+1])-ηu0
-#             end
-#             out_flds = (out_flds...,Δηu)
-#         end
-#         if return_time
-#             t  = t[1:Nt]
-#             out_flds = (out_flds...,t,dt_corr)
-#         end
-#     end
-#
-#     return out_flds
-# end
-
-
-
-# Interpolation code
-# function RK_interp_lin(x_in,y_in,x_out)
-#     N = 1
-#     if size(y_in,2)>1
-#         N = size(y_in,1)
-#     end
-#     K = length(x_out)
-#     y_out = zeros(N,K)
-#     nodes = (x_in,)
-#
-#     if N==1
-#         itp = interpolate(nodes,y_in,Gridded(Linear()))
-#         for k=1:K-1
-#             y_out[k] = itp(x_out[k])
-#         end
-#         y_out[K] = y_in[K]
-#     else
-#         for i=1:N
-#             itp = interpolate(nodes,y_in[i,:],Gridded(Linear()))
-#             for k=1:K-1
-#                 y_out[i,k] = itp(x_out[k])
-#             end
-#             y_out[i,K] = y_in[i,K]
-#         end
-#     end
-#     return y_out
-# end
