@@ -30,7 +30,7 @@ write_mat = true  # Want to output .mat file?
 make_plot = true # Want to output plots?
 
 if write_mat
-    file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK paper/figs/RRK_Euler.mat","w")
+    file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK_paper/figs/RRK_Euler.mat","w")
 end
 
 N = 3
@@ -272,7 +272,7 @@ arrks_h = AdjRRK_struct()
 ts_RRK = Time_struct()
 @pack! ts_RRK = t0,T
 
-Nref = 5
+Nref = 9
 h0 = 2^(-12)
 
 Random.seed!(05052021)

@@ -84,13 +84,10 @@ end
 write_mat = true  # Want to output .mat file?
 make_plot = false # Want to output plots?
 
-run_derv_test  = true # Want to run derivative tests?
-run_adj_conv   = true # Want to run adjoint convergence tests?
+run_derv_test  = false # Want to run derivative tests?
+run_adj_conv   = false # Want to run adjoint convergence tests?
 run_adj_growth = true # Want to run adjoint growth tests?
 
-if write_mat
-    file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK paper/figs/RRK_nlpen.mat","w")
-end
 
 # Initial time and initial condition
 t0 = 0
@@ -122,6 +119,10 @@ ts_RRK = Time_struct()
 if run_derv_test
     print("\nRunning derivative tests .... ")
 
+    if write_mat
+        file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK_paper/figs/RRK_nlpen_derv.mat","w")
+    end
+
     ts_RK.T  = 200
     ts_RRK.T = 200
 
@@ -129,7 +130,7 @@ if run_derv_test
     dt_RK3 = 0.1#0.65
     dt_RK2 = 0.1#0.4
 
-    Nref = 5
+    Nref = 12
     h0 = 2^(-12)
 
     arrks_h = AdjRRK_struct()
@@ -159,7 +160,7 @@ if run_derv_test
     errs_RRK_γ0,rate_RRK_γ0,h = AdjRRK.derv_test!(RRK_solver!,arrks_RRK,arrks_h,ts_RRK,rk,h0,Nref)
 
     if make_plot
-        labels = ["proper lin." "Δt*-const"-"γ const"]
+        labels = ["proper lin." "Δt*-const" "γ-const"]
         markers = [:circle :square :star5]
 
         errors = [errs_RRK,errs_RRK_dt0,errs_RRK_γ0]
@@ -297,6 +298,7 @@ if run_derv_test
 
     if write_mat
         write(file,"h_derv_test",h)
+        close(file)
     end
     println("End of derivative tests.")
 end
@@ -307,6 +309,9 @@ end
 
 if run_adj_conv
     print("\nRunning adjoint convergence tests .... ")
+    if write_mat
+        file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK_paper/figs/RRK_nlpen_conv.mat","w")
+    end
 
     ts_RK.T = 2
     ts_RRK.T = 2
@@ -592,6 +597,7 @@ if run_adj_conv
 
     if write_mat
         write(file,"dt_adj_conv",dt)
+        close(file)
     end
 
     println("End of adjoint convergence tests.")
@@ -603,6 +609,9 @@ end
 
 if run_adj_growth
     print("\nRunning adjoint growth tests ... ")
+    if write_mat
+        file = matopen("/Users/mariobencomo/Desktop/Research/AdjRRK_paper/figs/RRK_nlpen_adj.mat","w")
+    end
 
     ts_RK.T  = 200
     ts_RRK.T = 200
@@ -1125,12 +1134,12 @@ if run_adj_growth
         write(file,"y2_adj_RRK_dt0_big",z2_dt0)
         write(file,"y1_adj_RRK_g0_big",z1_γ0)
         write(file,"y2_adj_RRK_g0_big",z2_γ0)
+
+        write(file,"eta_RK_big",arrks_RK.Δη)
+        write(file,"eta_RRK_big",arrks_RRK.Δη)
+        write(file,"gamma_big",arrks_RRK.γ)
+        close(file)
     end
 
     println("End of adjoint growth experiment.")
-end
-
-
-if write_mat
-    close(file)
 end
