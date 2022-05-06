@@ -1,10 +1,4 @@
-# Testing out RRK method (linearized and adjoint code) on a small nonlinear ODE
-# system (nlinear pendulum) from Ranocha 2019.
-
-# Comparing the linearized and adjoint solutions from RRK algs when relaxation
-# parameter γ is viewed as a constant or function of state fields during
-# linearization. Also, looking at the effects of considering the last time step
-# correction in the linearization.
+# This file is deprecated. Should delete.
 
 using AdjRRK
 using LinearAlgebra
